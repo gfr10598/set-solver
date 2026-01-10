@@ -68,6 +68,8 @@ class CardDetector {
                     // If it's a quadrilateral (4 vertices), it might be a card
                     if (approx.total() == 4L) {
                         // Get the minimum area rectangle to determine rotation
+                        // Note: OpenCV's minAreaRect returns an angle between -90 and 0 degrees
+                        // representing the rotation of the rectangle's longer side relative to horizontal
                         val rotatedRect = Imgproc.minAreaRect(curve)
                         val angle = rotatedRect.angle.toFloat()
                         
