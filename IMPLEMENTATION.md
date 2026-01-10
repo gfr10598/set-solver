@@ -68,6 +68,7 @@ set-solver/
 - Detects contours to find card boundaries
 - Filters by area to identify cards
 - Extracts individual card regions
+- Detects card rotation angle using minimum area rectangle
 
 ### 3. Pattern Recognition
 Each card is analyzed for:
@@ -75,6 +76,7 @@ Each card is analyzed for:
 - **Shape**: Uses aspect ratio heuristics (Diamond, Oval, or Squiggle)
 - **Color**: Samples pixels to determine dominant color (Red, Green, or Purple)
 - **Shading**: Calculates fill ratio (Solid, Striped, or Open)
+- **Rotation**: Determines card orientation angle in degrees
 
 ### 4. Set Finding
 - Efficient algorithm checking all 3-card combinations

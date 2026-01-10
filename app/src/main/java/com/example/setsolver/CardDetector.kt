@@ -67,13 +67,17 @@ class CardDetector {
                     
                     // If it's a quadrilateral (4 vertices), it might be a card
                     if (approx.total() == 4L) {
+                        // Get the minimum area rectangle to determine rotation
+                        val rotatedRect = Imgproc.minAreaRect(curve)
+                        val angle = rotatedRect.angle.toFloat()
+                        
                         val rect = Imgproc.boundingRect(contour)
                         
                         // Extract the card region
                         val cardRegion = mat.submat(rect)
                         
-                        // Recognize the card attributes
-                        val card = recognizeCard(cardRegion, rect)
+                        // Recognize the card attributes, passing the rotation angle
+                        val card = recognizeCard(cardRegion, rect, angle)
                         if (card != null) {
                             cards.add(card)
                         }
@@ -108,7 +112,7 @@ class CardDetector {
      * Recognizes card attributes from a card region
      * This is a simplified implementation using basic heuristics
      */
-    private fun recognizeCard(cardRegion: Mat, rect: Rect): Card? {
+    private fun recognizeCard(cardRegion: Mat, rect: Rect, rotation: Float): Card? {
         try {
             // Convert to bitmap for color analysis
             val bitmap = Bitmap.createBitmap(cardRegion.cols(), cardRegion.rows(), Bitmap.Config.ARGB_8888)
@@ -128,7 +132,8 @@ class CardDetector {
                 x = rect.x.toFloat(),
                 y = rect.y.toFloat(),
                 width = rect.width.toFloat(),
-                height = rect.height.toFloat()
+                height = rect.height.toFloat(),
+                rotation = rotation
             )
             
         } catch (e: Exception) {

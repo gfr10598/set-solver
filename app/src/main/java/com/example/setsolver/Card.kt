@@ -11,7 +11,8 @@ data class Card(
     val x: Float = 0f,
     val y: Float = 0f,
     val width: Float = 0f,
-    val height: Float = 0f
+    val height: Float = 0f,
+    val rotation: Float = 0f  // Rotation angle in degrees
 ) {
     enum class Number(val count: Int) {
         ONE(1), TWO(2), THREE(3)
