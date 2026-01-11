@@ -37,6 +37,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         // Color clustering constants
         private const val MAX_COLOR_CLUSTERS = 3
         private const val COLOR_KMEANS_ITERATIONS = 10
+        private const val COLOR_KMEANS_ATTEMPTS = 3  // Number of attempts with different initial centers
         private const val COLOR_EPSILON = 1.0
         private const val DEFAULT_CLUSTER_VALUE = 128.0  // Default gray value for fallback cluster
         private const val WHITE_PIXEL_THRESHOLD = 200   // Threshold to identify white/background pixels
@@ -128,15 +129,11 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
      */
     private fun detectGridColumns(mat: Mat): Int {
         // Use aspect ratio to determine grid dimensions
-        // Typical SET cards have ~2:3 aspect ratio (width:height)
-        // For a 3-row grid:
-        // - 4 columns: image aspect ratio ~= (4 * 2) / (3 * 3) = 0.89
-        // - 5 columns: image aspect ratio ~= (5 * 2) / (3 * 3) = 1.11
-        // Use threshold at 1.0 with tolerance
+        // For a 3-row × N-column grid, the image aspect ratio depends on card layout
+        // Assuming cards are roughly square or slightly taller, a wider image suggests more columns
         val aspectRatio = mat.width().toDouble() / mat.height().toDouble()
         
-        // More robust: try both and see which gives better card dimensions
-        // But for now, use a simple threshold-based approach with some tolerance
+        // Use threshold at 1.0 with tolerance
         // If aspect ratio is significantly higher than 1.0, it's likely 5 columns
         // If it's close to or below 1.0, it's likely 4 columns
         return if (aspectRatio > 1.0) MAX_GRID_COLS else MIN_GRID_COLS
@@ -242,8 +239,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                         val g = Color.green(pixel).toFloat()
                         val b = Color.blue(pixel).toFloat()
                         
-                        // Filter out near-white pixels
-                        if (r < WHITE_PIXEL_THRESHOLD || g < WHITE_PIXEL_THRESHOLD || b < WHITE_PIXEL_THRESHOLD) {
+                        // Filter out near-white pixels (all channels must be below threshold)
+                        if (r < WHITE_PIXEL_THRESHOLD && g < WHITE_PIXEL_THRESHOLD && b < WHITE_PIXEL_THRESHOLD) {
                             coloredPixels.add(floatArrayOf(r, g, b))
                         }
                     }
@@ -297,7 +294,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 )
                 
                 // kmeans returns the compactness measure (lower is better for given k)
-                val compactness = Core.kmeans(samples, k, labels, criteria, 3, Core.KMEANS_PP_CENTERS, centers)
+                val compactness = Core.kmeans(samples, k, labels, criteria, 
+                    COLOR_KMEANS_ATTEMPTS, Core.KMEANS_PP_CENTERS, centers)
                 
                 // Extract cluster centers
                 val clusters = mutableListOf<Triple<Double, Double, Double>>()
@@ -307,8 +305,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 }
                 
                 // Prefer configurations with well-separated clusters
-                // For k=1, always accept. For k>1, need sufficient separation
-                if (k == 1 || (clusters.size == k && compactness < bestCompactness)) {
+                // For k=1, always accept. For k>1, prefer lower compactness
+                if (k == 1 || compactness < bestCompactness) {
                     bestClusters = clusters
                     bestK = k
                     bestCompactness = compactness
@@ -378,8 +376,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                     val g = Color.green(pixel)
                     val b = Color.blue(pixel)
                     
-                    // Count as colored if not white
-                    if (r < WHITE_PIXEL_THRESHOLD || g < WHITE_PIXEL_THRESHOLD || b < WHITE_PIXEL_THRESHOLD) {
+                    // Count as colored if not white (all channels must be below threshold)
+                    if (r < WHITE_PIXEL_THRESHOLD && g < WHITE_PIXEL_THRESHOLD && b < WHITE_PIXEL_THRESHOLD) {
                         coloredPixels++
                     }
                 }
@@ -679,8 +677,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 val g = Color.green(pixel)
                 val b = Color.blue(pixel)
                 
-                // Only consider colored (non-white) pixels
-                if (r < WHITE_PIXEL_THRESHOLD || g < WHITE_PIXEL_THRESHOLD || b < WHITE_PIXEL_THRESHOLD) {
+                // Only consider colored (non-white) pixels (all channels must be below threshold)
+                if (r < WHITE_PIXEL_THRESHOLD && g < WHITE_PIXEL_THRESHOLD && b < WHITE_PIXEL_THRESHOLD) {
                     coloredPixels.add(Triple(r, g, b))
                 }
             }
