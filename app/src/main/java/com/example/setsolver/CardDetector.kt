@@ -132,6 +132,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             
             // Step 4: Validate peaks
             if (xPeaks.size < MIN_PEAKS_FOR_VALID_GRID || yPeaks.size < MIN_PEAKS_FOR_VALID_GRID) {
+                Log.d(TAG, "Edge projection failed: insufficient peaks (X: ${xPeaks.size}, Y: ${yPeaks.size}, required: $MIN_PEAKS_FOR_VALID_GRID)")
                 return null
             }
             
@@ -142,6 +143,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             // Validate spacing
             if (cardWidth < MIN_CARD_SPACING || cardWidth > MAX_CARD_SPACING ||
                 cardHeight < MIN_CARD_SPACING || cardHeight > MAX_CARD_SPACING) {
+                Log.d(TAG, "Edge projection failed: invalid spacing (width: $cardWidth, height: $cardHeight)")
                 return null
             }
             
@@ -153,6 +155,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             
             // Validate grid dimensions
             if (numRows != GRID_ROWS || numCols < MIN_GRID_COLS || numCols > MAX_GRID_COLS) {
+                Log.d(TAG, "Edge projection failed: invalid grid dimensions (rows: $numRows, cols: $numCols)")
                 return null
             }
             
@@ -245,9 +248,13 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         
         if (spacings.isEmpty()) return 0
         
-        // Return median spacing
+        // Return median spacing (handle both even and odd sized lists)
         val sorted = spacings.sorted()
-        return sorted[sorted.size / 2]
+        return if (sorted.size % 2 == 0) {
+            (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2
+        } else {
+            sorted[sorted.size / 2]
+        }
     }
 
     /**
