@@ -218,12 +218,12 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
     }
 
     /**
-     * Detects the shape of symbols on the card
-     * This is a simplified implementation
+     * Detects the shape of symbols on the card using parallel edge analysis
+     * - Diamond: 2 pairs of parallel edges (rhombus)
+     * - Oval: 1 pair of parallel edges (elongated ellipse)
+     * - Squiggle: 0 pairs of parallel edges (irregular/wavy)
      */
     private fun detectShape(cardRegion: Mat): Card.Shape {
-        // For now, use a simple heuristic based on aspect ratio
-        // In a real implementation, this would use more sophisticated shape analysis
         val gray = Mat()
         Imgproc.cvtColor(cardRegion, gray, Imgproc.COLOR_RGB2GRAY)
         
@@ -237,22 +237,31 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE
         )
         
-        var shape = Card.Shape.OVAL // Default
+        var shape = Card.Shape.SQUIGGLE // Default to squiggle
         
         if (contours.isNotEmpty()) {
             // Find the largest contour (likely a symbol)
             val largestContour = contours.maxByOrNull { Imgproc.contourArea(it) }
             
             if (largestContour != null) {
-                val rect = Imgproc.boundingRect(largestContour)
-                val aspectRatio = rect.width.toDouble() / rect.height.toDouble()
+                // Approximate contour to polygon to get edges
+                val curve = MatOfPoint2f(*largestContour.toArray())
+                val approx = MatOfPoint2f()
+                val perimeter = Imgproc.arcLength(curve, true)
+                Imgproc.approxPolyDP(curve, approx, 0.02 * perimeter, true)
                 
-                // Simple heuristic for shape detection
-                shape = when {
-                    aspectRatio > 1.5 -> Card.Shape.OVAL
-                    aspectRatio < 0.7 -> Card.Shape.DIAMOND
-                    else -> Card.Shape.SQUIGGLE
+                // Count parallel edge pairs
+                val parallelPairs = countParallelEdgePairs(approx)
+                
+                // Classify based on parallel pairs
+                shape = when (parallelPairs) {
+                    2 -> Card.Shape.DIAMOND   // 2 pairs = rhombus/diamond
+                    1 -> Card.Shape.OVAL      // 1 pair = elongated oval
+                    else -> Card.Shape.SQUIGGLE  // 0 pairs = irregular squiggle
                 }
+                
+                curve.release()
+                approx.release()
             }
         }
         
@@ -262,6 +271,75 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         contours.forEach { it.release() }
         
         return shape
+    }
+
+    /**
+     * Counts the number of parallel edge pairs in a polygon contour
+     * 
+     * @param approx Approximated polygon contour
+     * @return Number of parallel edge pairs found
+     */
+    private fun countParallelEdgePairs(approx: MatOfPoint2f): Int {
+        val points = approx.toArray()
+        if (points.size < 3) return 0
+        
+        // Extract edges (line segments between consecutive vertices)
+        val edges = mutableListOf<Pair<Point, Point>>()
+        for (i in points.indices) {
+            val p1 = points[i]
+            val p2 = points[(i + 1) % points.size]
+            edges.add(Pair(p1, p2))
+        }
+        
+        // Count parallel pairs
+        val PARALLEL_THRESHOLD = 10.0  // degrees tolerance for parallel detection
+        var pairCount = 0
+        val used = mutableSetOf<Int>()
+        
+        for (i in edges.indices) {
+            if (i in used) continue
+            
+            val angle1 = getEdgeAngle(edges[i])
+            
+            // Look for a parallel edge
+            for (j in (i + 1) until edges.size) {
+                if (j in used) continue
+                
+                val angle2 = getEdgeAngle(edges[j])
+                
+                // Normalize angle difference to 0-180 range
+                var angleDiff = Math.abs(angle1 - angle2)
+                if (angleDiff > 180) angleDiff = 360 - angleDiff
+                
+                // Check if parallel (same angle within threshold)
+                if (angleDiff < PARALLEL_THRESHOLD || 
+                    Math.abs(angleDiff - 180) < PARALLEL_THRESHOLD) {
+                    pairCount++
+                    used.add(i)
+                    used.add(j)
+                    break  // Found a pair for edge i, move to next
+                }
+            }
+        }
+        
+        return pairCount
+    }
+
+    /**
+     * Calculates the angle of an edge in degrees
+     * 
+     * @param edge Pair of points representing the edge
+     * @return Angle in degrees (0-360)
+     */
+    private fun getEdgeAngle(edge: Pair<Point, Point>): Double {
+        val dx = edge.second.x - edge.first.x
+        val dy = edge.second.y - edge.first.y
+        var angle = Math.toDegrees(Math.atan2(dy, dx))
+        
+        // Normalize to 0-360 range
+        if (angle < 0) angle += 360
+        
+        return angle
     }
 
     /**
