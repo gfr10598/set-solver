@@ -114,7 +114,8 @@ class ResultOverlayView @JvmOverloads constructor(
         
         // If a specific set is highlighted, grey out all other cards
         if (highlightedSetIndex != null && sets.isNotEmpty()) {
-            val highlightedSet = sets.getOrNull(highlightedSetIndex!!)
+            val selectedIndex = highlightedSetIndex!! // Store in local variable
+            val highlightedSet = sets.getOrNull(selectedIndex)
             if (highlightedSet != null) {
                 // Get all cards from all sets
                 val highlightedCards = setOf(
@@ -125,7 +126,7 @@ class ResultOverlayView @JvmOverloads constructor(
                 
                 // Grey out all cards that are not in the highlighted set
                 sets.forEachIndexed { index, set ->
-                    if (index != highlightedSetIndex) {
+                    if (index != selectedIndex) {
                         drawGreyOverlay(canvas, set.first)
                         drawGreyOverlay(canvas, set.second)
                         drawGreyOverlay(canvas, set.third)
@@ -133,7 +134,7 @@ class ResultOverlayView @JvmOverloads constructor(
                 }
                 
                 // Draw only the highlighted set with its color
-                val paint = paints[highlightedSetIndex!! % paints.size]
+                val paint = paints[selectedIndex % paints.size]
                 drawCardRect(canvas, highlightedSet.first, paint)
                 drawCardRect(canvas, highlightedSet.second, paint)
                 drawCardRect(canvas, highlightedSet.third, paint)

@@ -250,7 +250,11 @@ class MainActivity : AppCompatActivity() {
         currentState = UiState.LIVE_PREVIEW
         
         // Clear the captured bitmap
-        capturedBitmap?.recycle()
+        capturedBitmap?.let {
+            if (!it.isRecycled) {
+                it.recycle()
+            }
+        }
         capturedBitmap = null
         
         // Reset state
@@ -283,17 +287,17 @@ class MainActivity : AppCompatActivity() {
         binding.setButtonsScrollView.visibility = android.view.View.VISIBLE
         
         val colors = listOf(
-            getColor(R.color.set_highlight_1),
-            getColor(R.color.set_highlight_2),
-            getColor(R.color.set_highlight_3),
-            getColor(R.color.set_highlight_4)
+            ContextCompat.getColor(this, R.color.set_highlight_1),
+            ContextCompat.getColor(this, R.color.set_highlight_2),
+            ContextCompat.getColor(this, R.color.set_highlight_3),
+            ContextCompat.getColor(this, R.color.set_highlight_4)
         )
         
         sets.forEachIndexed { index, _ ->
             val button = android.widget.Button(this).apply {
                 text = getString(R.string.set_button_label, index + 1)
                 setBackgroundColor(colors[index % colors.size])
-                setTextColor(getColor(R.color.white))
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT

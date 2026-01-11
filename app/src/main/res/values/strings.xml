@@ -8,5 +8,5 @@
     <string name="sets_found">Sets found: %d</string>
     <string name="diagnostics_header">Diagnostics Log</string>
     <string name="set_button_label">Set %d</string>
-    <string name="captured_image_description">Captured image showing detected cards
+    <string name="captured_image_description">Captured image showing detected cards</string>
 </resources>
