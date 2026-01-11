@@ -23,6 +23,9 @@ class ResultOverlayView @JvmOverloads constructor(
     private var imageWidth: Float = 1f
     private var imageHeight: Float = 1f
     
+    private var imageWidth: Float = 1f
+    private var imageHeight: Float = 1f
+    
     private val cardBoundaryPaint = Paint().apply {
         color = context.getColor(R.color.card_boundary)
         style = Paint.Style.STROKE
@@ -60,6 +63,17 @@ class ResultOverlayView @JvmOverloads constructor(
                 isAntiAlias = true
             })
         }
+    }
+
+    /**
+     * Sets the dimensions of the source image for coordinate transformation
+     * This must be called whenever a new image is processed
+     */
+    fun setImageDimensions(width: Int, height: Int) {
+        require(width > 0 && height > 0) { "Image dimensions must be positive" }
+        imageWidth = width.toFloat()
+        imageHeight = height.toFloat()
+        invalidate()
     }
 
     /**
@@ -199,6 +213,7 @@ class ResultOverlayView @JvmOverloads constructor(
         val scaleX = width.toFloat() / imageWidth
         val scaleY = height.toFloat() / imageHeight
         
+        // Transform card centers from image space to screen space
         val centerX1 = (set.first.x + set.first.width / 2) * scaleX
         val centerY1 = (set.first.y + set.first.height / 2) * scaleY
         val centerX2 = (set.second.x + set.second.width / 2) * scaleX
