@@ -21,6 +21,9 @@ class ResultOverlayView @JvmOverloads constructor(
     private var allCards: List<Card> = emptyList()
     private var highlightedSetIndex: Int? = null
     
+    private var imageWidth: Float = 1f
+    private var imageHeight: Float = 1f
+    
     private val cardBoundaryPaint = Paint().apply {
         color = context.getColor(R.color.card_boundary)
         style = Paint.Style.STROKE
@@ -58,6 +61,17 @@ class ResultOverlayView @JvmOverloads constructor(
                 isAntiAlias = true
             })
         }
+    }
+
+    /**
+     * Sets the dimensions of the source image for coordinate transformation
+     * This must be called whenever a new image is processed
+     */
+    fun setImageDimensions(width: Int, height: Int) {
+        require(width > 0 && height > 0) { "Image dimensions must be positive" }
+        imageWidth = width.toFloat()
+        imageHeight = height.toFloat()
+        invalidate()
     }
 
     /**
@@ -157,32 +171,44 @@ class ResultOverlayView @JvmOverloads constructor(
     }
 
     private fun drawGreyOverlay(canvas: Canvas, card: Card) {
+        val scaleX = width.toFloat() / imageWidth
+        val scaleY = height.toFloat() / imageHeight
+        
         val rect = RectF(
-            card.x,
-            card.y,
-            card.x + card.width,
-            card.y + card.height
+            card.x * scaleX,
+            card.y * scaleY,
+            (card.x + card.width) * scaleX,
+            (card.y + card.height) * scaleY
         )
         canvas.drawRect(rect, greyOverlayPaint)
     }
 
     private fun drawCardRect(canvas: Canvas, card: Card, paint: Paint) {
+        // Calculate scale factors to map image coordinates to view coordinates
+        val scaleX = width.toFloat() / imageWidth
+        val scaleY = height.toFloat() / imageHeight
+        
+        // Transform card coordinates from image space to screen space
         val rect = RectF(
-            card.x,
-            card.y,
-            card.x + card.width,
-            card.y + card.height
+            card.x * scaleX,
+            card.y * scaleY,
+            (card.x + card.width) * scaleX,
+            (card.y + card.height) * scaleY
         )
         canvas.drawRect(rect, paint)
     }
 
     private fun drawConnectingLines(canvas: Canvas, set: Triple<Card, Card, Card>, paint: Paint) {
-        val centerX1 = set.first.x + set.first.width / 2
-        val centerY1 = set.first.y + set.first.height / 2
-        val centerX2 = set.second.x + set.second.width / 2
-        val centerY2 = set.second.y + set.second.height / 2
-        val centerX3 = set.third.x + set.third.width / 2
-        val centerY3 = set.third.y + set.third.height / 2
+        val scaleX = width.toFloat() / imageWidth
+        val scaleY = height.toFloat() / imageHeight
+        
+        // Transform card centers from image space to screen space
+        val centerX1 = (set.first.x + set.first.width / 2) * scaleX
+        val centerY1 = (set.first.y + set.first.height / 2) * scaleY
+        val centerX2 = (set.second.x + set.second.width / 2) * scaleX
+        val centerY2 = (set.second.y + set.second.height / 2) * scaleY
+        val centerX3 = (set.third.x + set.third.width / 2) * scaleX
+        val centerY3 = (set.third.y + set.third.height / 2) * scaleY
         
         // Draw thin lines connecting the centers
         val linePaint = Paint(paint).apply {
