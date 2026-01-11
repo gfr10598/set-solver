@@ -246,17 +246,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
-        val planeProxy = image.planes[0]
-        val buffer = planeProxy.buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
+        val yBuffer = image.planes[0].buffer
+        val uBuffer = image.planes[1].buffer
+        val vBuffer = image.planes[2].buffer
         
-        // Create bitmap from YUV format
-        return ImageUtils.yuv420ToBitmap(
-            bytes,
-            image.width,
-            image.height
-        )
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+        
+        val nv21 = ByteArray(ySize + uSize + vSize)
+        
+        // Copy Y plane
+        yBuffer.get(nv21, 0, ySize)
+        
+        // Copy and interleave U and V planes for NV21 format
+        // NV21 format: YYYYYYYY + VUVUVUVU (V before U, interleaved)
+        val uvPixelStride = image.planes[1].pixelStride
+        val uvRowStride = image.planes[1].rowStride
+        
+        if (uvPixelStride == 1) {
+            // Tightly packed - just copy V then U
+            vBuffer.get(nv21, ySize, vSize)
+            uBuffer.get(nv21, ySize + vSize, uSize)
+        } else {
+            // Need to interleave V and U
+            val uvWidth = image.width / 2
+            val uvHeight = image.height / 2
+            var pos = ySize
+            
+            for (row in 0 until uvHeight) {
+                for (col in 0 until uvWidth) {
+                    val vPos = row * uvRowStride + col * uvPixelStride
+                    val uPos = row * uvRowStride + col * uvPixelStride
+                    nv21[pos++] = vBuffer.get(vPos)
+                    nv21[pos++] = uBuffer.get(uPos)
+                }
+            }
+        }
+        
+        return ImageUtils.yuv420ToBitmap(nv21, image.width, image.height)
     }
 
     /**
