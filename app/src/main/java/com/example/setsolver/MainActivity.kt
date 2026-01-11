@@ -204,6 +204,9 @@ class MainActivity : AppCompatActivity() {
                 binding.capturedImageView.setImageBitmap(capturedBitmap)
                 binding.captureButton.text = getString(R.string.dismiss_button)
                 
+                // Set the image dimensions for coordinate transformation
+                binding.overlayView.setImageDimensions(bitmap.width, bitmap.height)
+                
                 if (cards.isEmpty()) {
                     binding.statusText.text = "No cards detected"
                     binding.overlayView.clear()
