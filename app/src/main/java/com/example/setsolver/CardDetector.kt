@@ -290,7 +290,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
      */
     private fun countParallelEdgePairs(approx: MatOfPoint2f): Int {
         val points = approx.toArray()
-        if (points.size < 3) return 0
+        // Need at least 4 points to form 2 edges that could be parallel
+        if (points.size < 4) return 0
         
         // Extract edges (line segments between consecutive vertices)
         val edges = mutableListOf<Pair<Point, Point>>()
@@ -321,8 +322,9 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 
                 // Check if parallel: edges are parallel if they have the same angle (0°)
                 // or opposite direction (180°). Both cases represent parallel lines.
+                // After normalization, this means angleDiff near 0 or near 180.
                 if (angleDiff < PARALLEL_THRESHOLD || 
-                    abs(angleDiff - 180) < PARALLEL_THRESHOLD) {
+                    angleDiff > (180 - PARALLEL_THRESHOLD)) {
                     pairCount++
                     used.add(i)
                     used.add(j)
