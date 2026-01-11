@@ -256,6 +256,9 @@ class MainActivity : AppCompatActivity() {
             }
             ImageFormat.JPEG -> {
                 // JPEG format - decode directly
+                if (image.planes.isEmpty()) {
+                    throw IllegalStateException("JPEG image must have at least 1 plane")
+                }
                 val buffer = image.planes[0].buffer
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
@@ -273,6 +276,9 @@ class MainActivity : AppCompatActivity() {
                     convertYuvToBitmap(image)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to convert unknown format, trying JPEG decode", e)
+                    if (image.planes.isEmpty()) {
+                        throw IllegalStateException("Image has no planes, cannot convert format ${image.format}")
+                    }
                     val buffer = image.planes[0].buffer
                     val bytes = ByteArray(buffer.remaining())
                     buffer.get(bytes)
@@ -331,6 +337,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun convertRgbaToBitmap(image: ImageProxy): Bitmap {
+        if (image.planes.isEmpty()) {
+            throw IllegalStateException("RGBA image must have at least 1 plane")
+        }
         val plane = image.planes[0]
         val buffer = plane.buffer
         val pixelStride = plane.pixelStride
