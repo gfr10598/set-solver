@@ -23,9 +23,6 @@ class ResultOverlayView @JvmOverloads constructor(
     private var imageWidth: Float = 1f
     private var imageHeight: Float = 1f
     
-    private var imageWidth: Float = 1f
-    private var imageHeight: Float = 1f
-    
     private val cardBoundaryPaint = Paint().apply {
         color = context.getColor(R.color.card_boundary)
         style = Paint.Style.STROKE
@@ -97,15 +94,6 @@ class ResultOverlayView @JvmOverloads constructor(
      */
     fun setCards(cards: List<Card>) {
         allCards = cards
-        invalidate()
-    }
-
-    /**
-     * Sets the dimensions of the source image for coordinate transformation
-     */
-    fun setImageDimensions(width: Int, height: Int) {
-        imageWidth = width.toFloat()
-        imageHeight = height.toFloat()
         invalidate()
     }
 
