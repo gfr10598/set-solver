@@ -9,6 +9,7 @@ import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.PI
+import kotlin.math.sqrt
 
 /**
  * Detects and recognizes Set cards in an image
@@ -710,7 +711,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         val dr = r - cr
         val dg = g - cg
         val db = b - cb
-        return kotlin.math.sqrt(dr * dr + dg * dg + db * db)
+        return sqrt(dr * dr + dg * dg + db * db)
     }
 
     /**
