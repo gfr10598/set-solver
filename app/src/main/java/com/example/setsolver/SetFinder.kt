@@ -11,6 +11,12 @@ class SetFinder(private val diagnosticLogger: DiagnosticLogger = NullDiagnosticL
      * the values are either all the same or all different
      */
     fun isValidSet(card1: Card, card2: Card, card3: Card): Boolean {
+        // Cards must not all be identical - they must differ in at least one dimension
+        if (card1 == card2 && card2 == card3) {
+            diagnosticLogger.log("Rejected: All three cards are identical (must differ in at least one dimension)")
+            return false
+        }
+        
         return isValidAttribute(card1.number, card2.number, card3.number) &&
                isValidAttribute(card1.shape, card2.shape, card3.shape) &&
                isValidAttribute(card1.color, card2.color, card3.color) &&
