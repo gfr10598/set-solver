@@ -7,6 +7,8 @@ import org.opencv.android.Utils
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.PI
 
 /**
  * Detects and recognizes Set cards in an image
@@ -308,12 +310,13 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 val angle2 = getEdgeAngle(edges[j])
                 
                 // Normalize angle difference to 0-180 range
-                var angleDiff = Math.abs(angle1 - angle2)
+                var angleDiff = abs(angle1 - angle2)
                 if (angleDiff > 180) angleDiff = 360 - angleDiff
                 
-                // Check if parallel (same angle within threshold)
+                // Check if parallel: edges are parallel if they have the same angle (0°)
+                // or opposite direction (180°). Both cases represent parallel lines.
                 if (angleDiff < PARALLEL_THRESHOLD || 
-                    Math.abs(angleDiff - 180) < PARALLEL_THRESHOLD) {
+                    abs(angleDiff - 180) < PARALLEL_THRESHOLD) {
                     pairCount++
                     used.add(i)
                     used.add(j)
@@ -334,7 +337,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
     private fun getEdgeAngle(edge: Pair<Point, Point>): Double {
         val dx = edge.second.x - edge.first.x
         val dy = edge.second.y - edge.first.y
-        var angle = Math.toDegrees(Math.atan2(dy, dx))
+        var angle = atan2(dy, dx) * 180.0 / PI
         
         // Normalize to 0-360 range
         if (angle < 0) angle += 360
