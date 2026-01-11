@@ -9,6 +9,7 @@ import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.PI
+import kotlin.math.sqrt
 
 /**
  * Detects and recognizes Set cards in an image
@@ -27,20 +28,53 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         /** Angle tolerance in degrees for detecting parallel edges */
         private const val PARALLEL_THRESHOLD = 10.0
 
-        // Color detection thresholds
-        private const val COLOR_CHANNEL_THRESHOLD = 20
-        private const val PURPLE_MIN_RB_VALUE = 80
+        // Grid detection constants
+        private const val GRID_ROWS = 3
+        private const val MIN_GRID_COLS = 4
+        private const val MAX_GRID_COLS = 5
+        private const val CARD_DIM_VARIANCE_THRESHOLD = 0.3 // 30% variance allowed
         
-        // Shading detection thresholds
-        private const val SOLID_FILL_RATIO = 0.35
-        private const val STRIPED_FILL_RATIO = 0.15
+        // Color clustering constants
+        private const val MAX_COLOR_CLUSTERS = 3
+        private const val COLOR_KMEANS_ITERATIONS = 10
+        private const val COLOR_KMEANS_ATTEMPTS = 3  // Number of attempts with different initial centers
+        private const val COLOR_EPSILON = 1.0
+        private const val DEFAULT_CLUSTER_VALUE = 128.0  // Default gray value for fallback cluster
+        private const val COLOR_DETECTION_THRESHOLD = 200   // Threshold below which a pixel is considered colored (not white)
+        
+        // Shading detection thresholds (pixel ratio based)
+        private const val SOLID_COLORED_RATIO = 0.4    // > 40% colored = SOLID
+        private const val STRIPED_COLORED_RATIO = 0.15 // > 15% colored = STRIPED, else OPEN
         
         // Performance tuning
         private const val COLOR_SAMPLING_STEP = 3
     }
+    
+    // Store detected color clusters globally for all cards
+    private var globalColorClusters: List<Triple<Double, Double, Double>> = emptyList()
+    
+    /**
+     * Determines if a pixel is colored (not white/background)
+     * A pixel is considered colored if all RGB channels are below the threshold
+     */
+    private fun isColoredPixel(r: Int, g: Int, b: Int): Boolean {
+        return r < COLOR_DETECTION_THRESHOLD && 
+               g < COLOR_DETECTION_THRESHOLD && 
+               b < COLOR_DETECTION_THRESHOLD
+    }
+    
+    /**
+     * Determines if a pixel is colored (not white/background) - Float version
+     */
+    private fun isColoredPixel(r: Float, g: Float, b: Float): Boolean {
+        return r < COLOR_DETECTION_THRESHOLD && 
+               g < COLOR_DETECTION_THRESHOLD && 
+               b < COLOR_DETECTION_THRESHOLD
+    }
 
     /**
      * Detects cards in an image and returns their locations and attributes
+     * Uses grid-based detection instead of contour detection
      */
     fun detectCards(bitmap: Bitmap): List<Card> {
         try {
@@ -52,94 +86,51 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             val mat = Mat()
             Utils.bitmapToMat(bitmap, mat)
             
-            // Convert to grayscale
-            val gray = Mat()
-            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+            diagnosticLogger.logSection("Grid-Based Card Detection")
             
-            // Apply Gaussian blur to reduce noise
-            val blurred = Mat()
-            Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
+            // Detect grid dimensions (4 or 5 columns)
+            val numCols = detectGridColumns(mat)
+            diagnosticLogger.log("Detected grid: $GRID_ROWS rows × $numCols columns")
             
-            // Apply adaptive threshold
-            val threshold = Mat()
-            Imgproc.adaptiveThreshold(
-                blurred, threshold, 255.0,
-                Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
-                Imgproc.THRESH_BINARY_INV, 11, 2.0
-            )
-            
-            diagnosticLogger.logSection("Card Detection")
-            
-            // Find contours
-            val contours = ArrayList<MatOfPoint>()
-            val hierarchy = Mat()
-            Imgproc.findContours(
-                threshold, contours, hierarchy,
-                Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE
-            )
-            
-            diagnosticLogger.log("Total contours found: ${contours.size}")
-            
-            val cards = mutableListOf<Card>()
-            var filteredCount = 0
-            var quadrilateralCount = 0
-            
-            // Process each contour to find cards
-            for (contour in contours) {
-                val area = Imgproc.contourArea(contour)
-                
-                if (area in MIN_CARD_AREA..MAX_CARD_AREA) {
-                    filteredCount++
-                    
-                    // Approximate the contour to a polygon
-                    val curve = MatOfPoint2f(*contour.toArray())
-                    val approx = MatOfPoint2f()
-                    val peri = Imgproc.arcLength(curve, true)
-                    Imgproc.approxPolyDP(curve, approx, 0.02 * peri, true)
-                    
-                    // If it's a quadrilateral (4 vertices), it might be a card
-                    if (approx.total() == 4L) {
-                        quadrilateralCount++
-                        
-                        // Get the minimum area rectangle to determine rotation
-                        // Note: OpenCV's minAreaRect returns an angle between -90 and 0 degrees
-                        // representing the rotation of the rectangle's longer side relative to horizontal
-                        val rotatedRect = Imgproc.minAreaRect(curve)
-                        val angle = rotatedRect.angle.toFloat()
-                        
-                        val rect = Imgproc.boundingRect(contour)
-                        
-                        diagnosticLogger.log("Card candidate ${cards.size + 1}: area=${"%.0f".format(area)}, rect=(${rect.x},${rect.y},${rect.width},${rect.height})")
-                        
-                        // Extract the card region
-                        val cardRegion = mat.submat(rect)
-                        
-                        // Recognize the card attributes, passing the rotation angle
-                        val card = recognizeCard(cardRegion, rect, angle, cards.size + 1)
-                        if (card != null) {
-                            cards.add(card)
-                        }
-                        
-                        cardRegion.release()
+            // Extract all card regions from the grid
+            val cardRegions = mutableListOf<Triple<Mat, Rect, Int>>() // Mat, Rect, cardIndex
+            for (row in 0 until GRID_ROWS) {
+                for (col in 0 until numCols) {
+                    val cardIndex = row * numCols + col + 1
+                    val (cardRegion, rect) = extractCardFromGrid(mat, row, col, numCols)
+                    if (cardRegion != null && rect != null) {
+                        cardRegions.add(Triple(cardRegion, rect, cardIndex))
                     }
-                    
-                    approx.release()
-                    curve.release()
                 }
-                
-                contour.release()
             }
             
-            diagnosticLogger.log("Contours passing size filter: $filteredCount")
-            diagnosticLogger.log("Quadrilateral contours: $quadrilateralCount")
+            diagnosticLogger.log("Extracted ${cardRegions.size} card regions from grid")
+            
+            // Validate card dimensions (ensure all cards have similar size)
+            val validatedRegions = validateCardDimensions(cardRegions)
+            diagnosticLogger.log("${validatedRegions.size} cards passed dimension validation")
+            
+            // Build global color histogram from all cards
+            globalColorClusters = buildGlobalColorClusters(validatedRegions.map { it.first })
+            diagnosticLogger.log("Detected ${globalColorClusters.size} color cluster(s)")
+            
+            diagnosticLogger.logSection("Feature Extraction")
+            
+            // Recognize each card
+            val cards = mutableListOf<Card>()
+            for ((cardRegion, rect, cardIndex) in validatedRegions) {
+                diagnosticLogger.log("Processing card $cardIndex at grid position")
+                val card = recognizeCard(cardRegion, rect, 0f, cardIndex)
+                if (card != null) {
+                    cards.add(card)
+                }
+                cardRegion.release()
+            }
+            
             diagnosticLogger.log("Cards successfully detected: ${cards.size}")
             
             // Clean up
             mat.release()
-            gray.release()
-            blurred.release()
-            threshold.release()
-            hierarchy.release()
             
             Log.d(TAG, "Detected ${cards.size} cards")
             return cards
@@ -148,6 +139,278 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             Log.e(TAG, "Error detecting cards", e)
             diagnosticLogger.log("ERROR: ${e.message}")
             return emptyList()
+        }
+    }
+
+    /**
+     * Detects whether the grid has 4 or 5 columns by analyzing the image
+     * Returns the number of columns detected
+     */
+    private fun detectGridColumns(mat: Mat): Int {
+        // Use aspect ratio to determine grid dimensions
+        // For a 3-row × N-column grid, the image aspect ratio depends on card layout
+        // Assuming cards are roughly square or slightly taller, a wider image suggests more columns
+        val aspectRatio = mat.width().toDouble() / mat.height().toDouble()
+        
+        // Use threshold at 1.0 with tolerance
+        // If aspect ratio is significantly higher than 1.0, it's likely 5 columns
+        // If it's close to or below 1.0, it's likely 4 columns
+        return if (aspectRatio > 1.0) MAX_GRID_COLS else MIN_GRID_COLS
+    }
+    
+    /**
+     * Extracts a card region from the grid at the specified position
+     * @return Pair of (cardRegion Mat, bounding Rect) or (null, null) if extraction fails
+     */
+    private fun extractCardFromGrid(mat: Mat, row: Int, col: Int, numCols: Int): Pair<Mat?, Rect?> {
+        try {
+            val imgWidth = mat.width()
+            val imgHeight = mat.height()
+            
+            // Calculate card dimensions with small margins to avoid border noise
+            val cardWidth = imgWidth / numCols
+            val cardHeight = imgHeight / GRID_ROWS
+            
+            // Add small margin (5% on each side) to avoid card edges
+            val marginX = (cardWidth * 0.05).toInt()
+            val marginY = (cardHeight * 0.05).toInt()
+            
+            // Calculate card position
+            val x = col * cardWidth + marginX
+            val y = row * cardHeight + marginY
+            val w = cardWidth - 2 * marginX
+            val h = cardHeight - 2 * marginY
+            
+            // Ensure bounds are valid
+            if (x < 0 || y < 0 || x + w > imgWidth || y + h > imgHeight || w <= 0 || h <= 0) {
+                return Pair(null, null)
+            }
+            
+            val rect = Rect(x, y, w, h)
+            val cardRegion = mat.submat(rect)
+            
+            return Pair(cardRegion, rect)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting card from grid at ($row, $col)", e)
+            return Pair(null, null)
+        }
+    }
+    
+    /**
+     * Validates that all card regions have similar dimensions
+     * Filters out outliers that differ significantly from the median
+     */
+    private fun validateCardDimensions(
+        cardRegions: List<Triple<Mat, Rect, Int>>
+    ): List<Triple<Mat, Rect, Int>> {
+        if (cardRegions.isEmpty()) return emptyList()
+        
+        // Calculate median width and height
+        val widths = cardRegions.map { it.second.width }.sorted()
+        val heights = cardRegions.map { it.second.height }.sorted()
+        
+        val medianWidth = widths[widths.size / 2]
+        val medianHeight = heights[heights.size / 2]
+        
+        // Filter cards that are within acceptable variance of median
+        return cardRegions.filter { (_, rect, _) ->
+            val widthRatio = rect.width.toDouble() / medianWidth
+            val heightRatio = rect.height.toDouble() / medianHeight
+            
+            widthRatio > (1.0 - CARD_DIM_VARIANCE_THRESHOLD) &&
+            widthRatio < (1.0 + CARD_DIM_VARIANCE_THRESHOLD) &&
+            heightRatio > (1.0 - CARD_DIM_VARIANCE_THRESHOLD) &&
+            heightRatio < (1.0 + CARD_DIM_VARIANCE_THRESHOLD)
+        }
+    }
+    
+    /**
+     * Builds global color clusters from all card regions
+     * Uses k-means clustering to identify 1-3 distinct colors
+     */
+    private fun buildGlobalColorClusters(cardRegions: List<Mat>): List<Triple<Double, Double, Double>> {
+        // Collect all colored pixels from all cards
+        val coloredPixels = mutableListOf<FloatArray>()
+        
+        for (cardRegion in cardRegions) {
+            // Normalize the card region
+            val normalized = normalizeCardRegion(cardRegion)
+            
+            // Generate symbol mask
+            val gray = Mat()
+            Imgproc.cvtColor(normalized, gray, Imgproc.COLOR_RGB2GRAY)
+            val symbolMask = Mat()
+            Imgproc.threshold(gray, symbolMask, 0.0, 255.0, 
+                Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU)
+            
+            // Convert to bitmap for pixel access
+            val bitmap = Bitmap.createBitmap(normalized.cols(), normalized.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(normalized, bitmap)
+            
+            // Sample colored pixels
+            for (x in 0 until normalized.cols() step COLOR_SAMPLING_STEP) {
+                for (y in 0 until normalized.rows() step COLOR_SAMPLING_STEP) {
+                    // Only consider pixels that are part of symbols (non-white)
+                    val maskValue = symbolMask.get(y, x)[0]
+                    if (maskValue > 0.0) {
+                        val pixel = bitmap.getPixel(x, y)
+                        val r = Color.red(pixel).toFloat()
+                        val g = Color.green(pixel).toFloat()
+                        val b = Color.blue(pixel).toFloat()
+                        
+                        // Keep colored pixels (non-white)
+                        if (isColoredPixel(r, g, b)) {
+                            coloredPixels.add(floatArrayOf(r, g, b))
+                        }
+                    }
+                }
+            }
+            
+            gray.release()
+            symbolMask.release()
+            bitmap.recycle()
+            normalized.release()
+        }
+        
+        if (coloredPixels.isEmpty()) {
+            // No colored pixels found, return default cluster
+            return listOf(Triple(DEFAULT_CLUSTER_VALUE, DEFAULT_CLUSTER_VALUE, DEFAULT_CLUSTER_VALUE))
+        }
+        
+        // Perform k-means clustering to find color clusters
+        return performKMeansClustering(coloredPixels)
+    }
+    
+    /**
+     * Performs k-means clustering on colored pixels to find distinct color clusters
+     * Tries different k values (1-3) and selects the best based on cluster quality
+     */
+    private fun performKMeansClustering(
+        pixels: List<FloatArray>
+    ): List<Triple<Double, Double, Double>> {
+        if (pixels.isEmpty()) return emptyList()
+        
+        // Convert to OpenCV Mat format
+        val samples = Mat(pixels.size, 3, org.opencv.core.CvType.CV_32F)
+        for (i in pixels.indices) {
+            samples.put(i, 0, pixels[i][0].toDouble(), pixels[i][1].toDouble(), pixels[i][2].toDouble())
+        }
+        
+        // Try clustering with different K values (1-3) and pick based on cluster separation
+        var bestClusters: List<Triple<Double, Double, Double>> = emptyList()
+        var bestK = 1
+        var bestCompactness = Double.MAX_VALUE
+        
+        for (k in 1..MAX_COLOR_CLUSTERS) {
+            try {
+                val labels = Mat()
+                val centers = Mat()
+                
+                val criteria = org.opencv.core.TermCriteria(
+                    org.opencv.core.TermCriteria.EPS + org.opencv.core.TermCriteria.MAX_ITER,
+                    COLOR_KMEANS_ITERATIONS,
+                    COLOR_EPSILON
+                )
+                
+                // kmeans returns the compactness measure (lower is better for given k)
+                val compactness = Core.kmeans(samples, k, labels, criteria, 
+                    COLOR_KMEANS_ATTEMPTS, Core.KMEANS_PP_CENTERS, centers)
+                
+                // Extract cluster centers
+                val clusters = mutableListOf<Triple<Double, Double, Double>>()
+                for (i in 0 until centers.rows()) {
+                    val center = centers.get(i, 0)
+                    clusters.add(Triple(center[0], center[1], center[2]))
+                }
+                
+                // Prefer configurations with well-separated clusters
+                // For k=1, always accept. For k>1, prefer lower compactness
+                if (k == 1 || compactness < bestCompactness) {
+                    bestClusters = clusters
+                    bestK = k
+                    bestCompactness = compactness
+                }
+                
+                labels.release()
+                centers.release()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in k-means clustering with k=$k", e)
+            }
+        }
+        
+        samples.release()
+        
+        // Return the best clusters found (or default if none found)
+        return if (bestClusters.isNotEmpty()) {
+            bestClusters
+        } else {
+            listOf(Triple(DEFAULT_CLUSTER_VALUE, DEFAULT_CLUSTER_VALUE, DEFAULT_CLUSTER_VALUE))
+        }
+    }
+    
+    /**
+     * Maps a color cluster to a CardColor enum based on RGB characteristics
+     */
+    private fun mapClusterToCardColor(cluster: Triple<Double, Double, Double>): Card.CardColor {
+        val (r, g, b) = cluster
+        
+        // Classify based on dominant channel
+        return when {
+            r > g && r > b -> Card.CardColor.RED     // Red dominant
+            g > r && g > b -> Card.CardColor.GREEN   // Green dominant
+            else -> Card.CardColor.PURPLE            // Purple: high R+B, low G
+        }
+    }
+    
+    /**
+     * Calculates the ratio of colored pixels vs total pixels in a symbol region
+     */
+    private fun calculateColoredPixelRatio(cardRegion: Mat): Double {
+        // Convert to grayscale
+        val gray = Mat()
+        Imgproc.cvtColor(cardRegion, gray, Imgproc.COLOR_RGB2GRAY)
+        
+        // Threshold to identify symbols (non-white regions)
+        val symbolMask = Mat()
+        Imgproc.threshold(gray, symbolMask, 0.0, 255.0, 
+            Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU)
+        
+        // Convert to bitmap to analyze pixel colors
+        val bitmap = Bitmap.createBitmap(cardRegion.cols(), cardRegion.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(cardRegion, bitmap)
+        
+        var totalSymbolPixels = 0
+        var coloredPixels = 0
+        
+        // Analyze pixels in symbol regions with sampling for performance
+        for (x in 0 until cardRegion.cols() step COLOR_SAMPLING_STEP) {
+            for (y in 0 until cardRegion.rows() step COLOR_SAMPLING_STEP) {
+                val maskValue = symbolMask.get(y, x)[0]
+                if (maskValue > 0.0) {
+                    totalSymbolPixels++
+                    
+                    val pixel = bitmap.getPixel(x, y)
+                    val r = Color.red(pixel)
+                    val g = Color.green(pixel)
+                    val b = Color.blue(pixel)
+                    
+                    // Count as colored if not white
+                    if (isColoredPixel(r, g, b)) {
+                        coloredPixels++
+                    }
+                }
+            }
+        }
+        
+        gray.release()
+        symbolMask.release()
+        bitmap.recycle()
+        
+        return if (totalSymbolPixels > 0) {
+            coloredPixels.toDouble() / totalSymbolPixels
+        } else {
+            0.0
         }
     }
 
@@ -407,18 +670,21 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
     }
 
     /**
-     * Detects the color of symbols on the card
+     * Detects the color of symbols on the card using global color clusters
      */
     private fun detectColor(cardRegion: Mat, symbolMask: Mat): Card.CardColor {
-        var redCount = 0
-        var greenCount = 0
-        var purpleCount = 0
+        if (globalColorClusters.isEmpty()) {
+            // Fallback to default if no clusters available
+            return Card.CardColor.PURPLE
+        }
         
-        // Convert to bitmap for pixel access
+        // Collect colored pixels from this card
         val bitmap = Bitmap.createBitmap(cardRegion.cols(), cardRegion.rows(), Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(cardRegion, bitmap)
         
-        // Sample pixels with a step size for efficiency, but check mask for each
+        val coloredPixels = mutableListOf<Triple<Int, Int, Int>>()
+        
+        // Sample pixels with a step size for efficiency
         for (x in 0 until cardRegion.cols() step COLOR_SAMPLING_STEP) {
             for (y in 0 until cardRegion.rows() step COLOR_SAMPLING_STEP) {
                 // Check if this pixel is part of a symbol
@@ -430,50 +696,73 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 val g = Color.green(pixel)
                 val b = Color.blue(pixel)
                 
-                // Classify color based on dominant channel
-                when {
-                    r > g + COLOR_CHANNEL_THRESHOLD && r > b + COLOR_CHANNEL_THRESHOLD -> redCount++
-                    g > r + COLOR_CHANNEL_THRESHOLD && g > b + COLOR_CHANNEL_THRESHOLD -> greenCount++
-                    b > r + COLOR_CHANNEL_THRESHOLD || (r > PURPLE_MIN_RB_VALUE && b > PURPLE_MIN_RB_VALUE && b > g) -> purpleCount++
+                // Only consider colored (non-white) pixels
+                if (isColoredPixel(r, g, b)) {
+                    coloredPixels.add(Triple(r, g, b))
                 }
             }
         }
         
-        // Clean up
         bitmap.recycle()
         
-        return when {
-            redCount > greenCount && redCount > purpleCount -> Card.CardColor.RED
-            greenCount > redCount && greenCount > purpleCount -> Card.CardColor.GREEN
-            else -> Card.CardColor.PURPLE
+        if (coloredPixels.isEmpty()) {
+            // No colored pixels, default to purple
+            return Card.CardColor.PURPLE
         }
+        
+        // Find the closest cluster for each pixel and vote
+        val clusterVotes = mutableMapOf<Int, Int>()
+        
+        for ((r, g, b) in coloredPixels) {
+            var closestCluster = 0
+            var minDistance = Double.MAX_VALUE
+            
+            for ((idx, cluster) in globalColorClusters.withIndex()) {
+                val distance = colorDistance(r, g, b, cluster)
+                if (distance < minDistance) {
+                    minDistance = distance
+                    closestCluster = idx
+                }
+            }
+            
+            clusterVotes[closestCluster] = (clusterVotes[closestCluster] ?: 0) + 1
+        }
+        
+        // Get the cluster with most votes
+        val dominantClusterIndex = clusterVotes.maxByOrNull { it.value }?.key
+        if (dominantClusterIndex == null) {
+            // Safety fallback
+            return Card.CardColor.PURPLE
+        }
+        
+        val dominantClusterColor = globalColorClusters[dominantClusterIndex]
+        
+        // Map cluster to CardColor
+        return mapClusterToCardColor(dominantClusterColor)
+    }
+    
+    /**
+     * Calculates Euclidean distance between a pixel and a color cluster
+     */
+    private fun colorDistance(r: Int, g: Int, b: Int, cluster: Triple<Double, Double, Double>): Double {
+        val (cr, cg, cb) = cluster
+        val dr = r - cr
+        val dg = g - cg
+        val db = b - cb
+        return sqrt(dr * dr + dg * dg + db * db)
     }
 
     /**
-     * Detects the shading of symbols on the card
+     * Detects the shading of symbols on the card using colored vs white pixel ratio
      */
     private fun detectShading(cardRegion: Mat): Card.Shading {
-        // Convert to grayscale
-        val gray = Mat()
-        Imgproc.cvtColor(cardRegion, gray, Imgproc.COLOR_RGB2GRAY)
+        // Calculate ratio of colored pixels to total symbol pixels
+        val coloredRatio = calculateColoredPixelRatio(cardRegion)
         
-        // Use Otsu's method for adaptive thresholding
-        val threshold = Mat()
-        Imgproc.threshold(gray, threshold, 0.0, 255.0, 
-            Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU)
-        
-        // Calculate the ratio of filled pixels
-        val nonZero = Core.countNonZero(threshold)
-        val total = threshold.rows() * threshold.cols()
-        val fillRatio = nonZero.toDouble() / total
-        
-        gray.release()
-        threshold.release()
-        
-        // Adjusted thresholds based on normalized images
+        // Classify based on ratio thresholds
         return when {
-            fillRatio > SOLID_FILL_RATIO -> Card.Shading.SOLID
-            fillRatio > STRIPED_FILL_RATIO -> Card.Shading.STRIPED
+            coloredRatio > SOLID_COLORED_RATIO -> Card.Shading.SOLID
+            coloredRatio > STRIPED_COLORED_RATIO -> Card.Shading.STRIPED
             else -> Card.Shading.OPEN
         }
     }
