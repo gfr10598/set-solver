@@ -68,6 +68,7 @@ class ResultOverlayView @JvmOverloads constructor(
      * This must be called whenever a new image is processed
      */
     fun setImageDimensions(width: Int, height: Int) {
+        require(width > 0 && height > 0) { "Image dimensions must be positive" }
         imageWidth = width.toFloat()
         imageHeight = height.toFloat()
         invalidate()
