@@ -43,7 +43,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         private const val EDGE_CANNY_THRESHOLD_HIGH = 150.0
         private const val PROJECTION_PEAK_THRESHOLD_MULTIPLIER = 1.5f
         private const val MIN_PEAK_DISTANCE_DIVISOR = 3  // imgWidth / (maxCols * 3)
-        private const val MIN_PEAKS_FOR_VALID_GRID = 4  // At least 3 cards
+        private const val MIN_PEAKS_FOR_VALID_GRID = 4  // At least 4 peaks (N peaks = N-1 cards, so 4 peaks = 3 cards minimum)
         private const val MIN_CARD_SPACING = 50  // Minimum spacing in pixels
         private const val MAX_CARD_SPACING = 1000  // Maximum spacing in pixels
         
@@ -172,7 +172,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
     /**
      * Projects edge pixels onto an axis
      * @param edges Edge-detected image
-     * @param horizontal If true, projects onto Y-axis (horizontal projection), else X-axis (vertical projection)
+     * @param horizontal If true, sums across rows to create horizontal projection (vertical structure analysis),
+     *                   else sums across columns for vertical projection (horizontal structure analysis)
      * @return 1D histogram of edge density
      */
     private fun projectEdgesToAxis(edges: Mat, horizontal: Boolean): FloatArray {
