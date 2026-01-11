@@ -73,21 +73,16 @@ class SetFinder(private val diagnosticLogger: DiagnosticLogger = NullDiagnosticL
         diagnosticLogger.log("  Card $idx2: ${card2.number.count} ${card2.color.name} ${card2.shape.name} ${card2.shading.name}")
         diagnosticLogger.log("  Card $idx3: ${card3.number.count} ${card3.color.name} ${card3.shape.name} ${card3.shading.name}")
         
-        val numberValid = isValidAttribute(card1.number, card2.number, card3.number)
-        val shapeValid = isValidAttribute(card1.shape, card2.shape, card3.shape)
-        val colorValid = isValidAttribute(card1.color, card2.color, card3.color)
-        val shadingValid = isValidAttribute(card1.shading, card2.shading, card3.shading)
-        
-        diagnosticLogger.log("  Number: ${getAttributeStatus(card1.number, card2.number, card3.number, numberValid)}")
-        diagnosticLogger.log("  Shape: ${getAttributeStatus(card1.shape, card2.shape, card3.shape, shapeValid)}")
-        diagnosticLogger.log("  Color: ${getAttributeStatus(card1.color, card2.color, card3.color, colorValid)}")
-        diagnosticLogger.log("  Shading: ${getAttributeStatus(card1.shading, card2.shading, card3.shading, shadingValid)}")
+        diagnosticLogger.log("  Number: ${getAttributeStatus(card1.number, card2.number, card3.number)}")
+        diagnosticLogger.log("  Shape: ${getAttributeStatus(card1.shape, card2.shape, card3.shape)}")
+        diagnosticLogger.log("  Color: ${getAttributeStatus(card1.color, card2.color, card3.color)}")
+        diagnosticLogger.log("  Shading: ${getAttributeStatus(card1.shading, card2.shading, card3.shading)}")
     }
     
     /**
      * Returns a string describing the status of an attribute
      */
-    private fun <T> getAttributeStatus(attr1: T, attr2: T, attr3: T, isValid: Boolean): String {
+    private fun <T> getAttributeStatus(attr1: T, attr2: T, attr3: T): String {
         return if (attr1 == attr2 && attr2 == attr3) {
             "All same ✓"
         } else if (attr1 != attr2 && attr2 != attr3 && attr1 != attr3) {
