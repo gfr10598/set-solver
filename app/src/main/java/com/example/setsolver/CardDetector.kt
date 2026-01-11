@@ -111,20 +111,65 @@ class CardDetector {
     }
 
     /**
+     * Normalizes brightness and contrast of a card region for robust feature detection
+     * This makes color and shading detection less sensitive to lighting conditions
+     */
+    private fun normalizeCardRegion(cardRegion: Mat): Mat {
+        val normalized = Mat()
+        
+        // Use CLAHE (Contrast Limited Adaptive Histogram Equalization)
+        // This enhances local contrast while preventing over-amplification of noise
+        val lab = Mat()
+        Imgproc.cvtColor(cardRegion, lab, Imgproc.COLOR_RGB2Lab)
+        
+        // Split into L, a, b channels
+        val channels = ArrayList<Mat>()
+        Core.split(lab, channels)
+        
+        // Apply CLAHE to the L (lightness) channel
+        val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+        clahe.apply(channels[0], channels[0])
+        
+        // Merge channels back
+        Core.merge(channels, lab)
+        
+        // Convert back to RGB
+        Imgproc.cvtColor(lab, normalized, Imgproc.COLOR_Lab2RGB)
+        
+        // Release resources
+        lab.release()
+        channels.forEach { it.release() }
+        
+        return normalized
+    }
+
+    /**
      * Recognizes card attributes from a card region
      * This is a simplified implementation using basic heuristics
      */
     private fun recognizeCard(cardRegion: Mat, rect: Rect, rotation: Float): Card? {
         try {
-            // Convert to bitmap for color analysis
-            val bitmap = Bitmap.createBitmap(cardRegion.cols(), cardRegion.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(cardRegion, bitmap)
+            // Normalize brightness and contrast
+            val normalizedRegion = normalizeCardRegion(cardRegion)
             
             // Analyze the card to determine its attributes
-            val number = detectNumber(cardRegion)
-            val shape = detectShape(cardRegion)
-            val color = detectColor(bitmap)
-            val shading = detectShading(cardRegion)
+            val number = detectNumber(normalizedRegion)
+            val shape = detectShape(normalizedRegion)
+            
+            // Generate symbol mask for color detection
+            val gray = Mat()
+            Imgproc.cvtColor(normalizedRegion, gray, Imgproc.COLOR_RGB2GRAY)
+            val symbolMask = Mat()
+            Imgproc.threshold(gray, symbolMask, 0.0, 255.0, 
+                Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU)
+            gray.release()
+            
+            val color = detectColor(normalizedRegion, symbolMask)
+            val shading = detectShading(normalizedRegion)
+            
+            // Clean up
+            normalizedRegion.release()
+            symbolMask.release()
             
             return Card(
                 number = number,
@@ -233,29 +278,32 @@ class CardDetector {
     /**
      * Detects the color of symbols on the card
      */
-    private fun detectColor(bitmap: Bitmap): Card.CardColor {
+    private fun detectColor(cardRegion: Mat, symbolMask: Mat): Card.CardColor {
         var redCount = 0
         var greenCount = 0
         var purpleCount = 0
         
-        // Sample pixels to determine dominant color
-        val sampleSize = 10
-        for (x in 0 until bitmap.width step sampleSize) {
-            for (y in 0 until bitmap.height step sampleSize) {
+        // Convert to bitmap for pixel access
+        val bitmap = Bitmap.createBitmap(cardRegion.cols(), cardRegion.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(cardRegion, bitmap)
+        
+        // Sample only pixels that are part of symbols (non-zero in mask)
+        for (x in 0 until cardRegion.cols()) {
+            for (y in 0 until cardRegion.rows()) {
+                // Check if this pixel is part of a symbol
+                val maskValue = symbolMask.get(y, x)[0]
+                if (maskValue == 0.0) continue  // Skip background pixels
+                
                 val pixel = bitmap.getPixel(x, y)
                 val r = Color.red(pixel)
                 val g = Color.green(pixel)
                 val b = Color.blue(pixel)
                 
-                // Skip white/black pixels
-                if (r > 200 && g > 200 && b > 200) continue
-                if (r < 50 && g < 50 && b < 50) continue
-                
-                // Classify color
+                // Classify color based on dominant channel
                 when {
-                    r > g && r > b -> redCount++
-                    g > r && g > b -> greenCount++
-                    b > g || (r > 100 && b > 100) -> purpleCount++
+                    r > g + 20 && r > b + 20 -> redCount++
+                    g > r + 20 && g > b + 20 -> greenCount++
+                    b > r + 20 || (r > 80 && b > 80 && b > g) -> purpleCount++
                 }
             }
         }
@@ -275,8 +323,10 @@ class CardDetector {
         val gray = Mat()
         Imgproc.cvtColor(cardRegion, gray, Imgproc.COLOR_RGB2GRAY)
         
+        // Use Otsu's method for adaptive thresholding
         val threshold = Mat()
-        Imgproc.threshold(gray, threshold, 128.0, 255.0, Imgproc.THRESH_BINARY_INV)
+        Imgproc.threshold(gray, threshold, 0.0, 255.0, 
+            Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU)
         
         // Calculate the ratio of filled pixels
         val nonZero = Core.countNonZero(threshold)
@@ -286,10 +336,10 @@ class CardDetector {
         gray.release()
         threshold.release()
         
-        // Classify shading based on fill ratio
+        // Adjusted thresholds based on normalized images
         return when {
-            fillRatio > 0.3 -> Card.Shading.SOLID
-            fillRatio > 0.1 -> Card.Shading.STRIPED
+            fillRatio > 0.35 -> Card.Shading.SOLID
+            fillRatio > 0.15 -> Card.Shading.STRIPED
             else -> Card.Shading.OPEN
         }
     }
