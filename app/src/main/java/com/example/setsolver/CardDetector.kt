@@ -40,7 +40,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         private const val COLOR_KMEANS_ATTEMPTS = 3  // Number of attempts with different initial centers
         private const val COLOR_EPSILON = 1.0
         private const val DEFAULT_CLUSTER_VALUE = 128.0  // Default gray value for fallback cluster
-        private const val WHITE_PIXEL_THRESHOLD = 200   // Threshold to identify white/background pixels
+        private const val COLOR_DETECTION_THRESHOLD = 200   // Threshold below which a pixel is considered colored (not white)
         
         // Shading detection thresholds (pixel ratio based)
         private const val SOLID_COLORED_RATIO = 0.4    // > 40% colored = SOLID
@@ -52,6 +52,25 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
     
     // Store detected color clusters globally for all cards
     private var globalColorClusters: List<Triple<Double, Double, Double>> = emptyList()
+    
+    /**
+     * Determines if a pixel is colored (not white/background)
+     * A pixel is considered colored if all RGB channels are below the threshold
+     */
+    private fun isColoredPixel(r: Int, g: Int, b: Int): Boolean {
+        return r < COLOR_DETECTION_THRESHOLD && 
+               g < COLOR_DETECTION_THRESHOLD && 
+               b < COLOR_DETECTION_THRESHOLD
+    }
+    
+    /**
+     * Determines if a pixel is colored (not white/background) - Float version
+     */
+    private fun isColoredPixel(r: Float, g: Float, b: Float): Boolean {
+        return r < COLOR_DETECTION_THRESHOLD && 
+               g < COLOR_DETECTION_THRESHOLD && 
+               b < COLOR_DETECTION_THRESHOLD
+    }
 
     /**
      * Detects cards in an image and returns their locations and attributes
@@ -239,8 +258,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                         val g = Color.green(pixel).toFloat()
                         val b = Color.blue(pixel).toFloat()
                         
-                        // Keep colored pixels (all channels must be below white threshold)
-                        if (r < WHITE_PIXEL_THRESHOLD && g < WHITE_PIXEL_THRESHOLD && b < WHITE_PIXEL_THRESHOLD) {
+                        // Keep colored pixels (non-white)
+                        if (isColoredPixel(r, g, b)) {
                             coloredPixels.add(floatArrayOf(r, g, b))
                         }
                     }
@@ -376,8 +395,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                     val g = Color.green(pixel)
                     val b = Color.blue(pixel)
                     
-                    // Count as colored if not white (all channels must be below threshold)
-                    if (r < WHITE_PIXEL_THRESHOLD && g < WHITE_PIXEL_THRESHOLD && b < WHITE_PIXEL_THRESHOLD) {
+                    // Count as colored if not white
+                    if (isColoredPixel(r, g, b)) {
                         coloredPixels++
                     }
                 }
@@ -677,8 +696,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 val g = Color.green(pixel)
                 val b = Color.blue(pixel)
                 
-                // Only consider colored (non-white) pixels (all channels must be below threshold)
-                if (r < WHITE_PIXEL_THRESHOLD && g < WHITE_PIXEL_THRESHOLD && b < WHITE_PIXEL_THRESHOLD) {
+                // Only consider colored (non-white) pixels
+                if (isColoredPixel(r, g, b)) {
                     coloredPixels.add(Triple(r, g, b))
                 }
             }
@@ -711,8 +730,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         
         // Get the cluster with most votes
         val dominantClusterIndex = clusterVotes.maxByOrNull { it.value }?.key
-        if (dominantClusterIndex == null || dominantClusterIndex >= globalColorClusters.size) {
-            // Safety fallback: should not happen if globalColorClusters is non-empty
+        if (dominantClusterIndex == null) {
+            // Safety fallback
             return Card.CardColor.PURPLE
         }
         
