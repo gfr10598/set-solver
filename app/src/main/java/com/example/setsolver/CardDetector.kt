@@ -38,6 +38,15 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         private const val SEARCH_MARGIN = 0.15 // 15% expansion of grid cell for search region
         private const val CONTOUR_APPROX_EPSILON = 0.02 // 2% deviation allowed for polygon approximation
         
+        // Edge projection constants
+        private const val EDGE_CANNY_THRESHOLD_LOW = 50.0
+        private const val EDGE_CANNY_THRESHOLD_HIGH = 150.0
+        private const val PROJECTION_PEAK_THRESHOLD_MULTIPLIER = 1.5f
+        private const val MIN_PEAK_DISTANCE_DIVISOR = 3  // imgWidth / (maxCols * 3)
+        private const val MIN_PEAKS_FOR_VALID_GRID = 4  // At least 3 cards
+        private const val MIN_CARD_SPACING = 50  // Minimum spacing in pixels
+        private const val MAX_CARD_SPACING = 1000  // Maximum spacing in pixels
+        
         // Color clustering constants
         private const val MAX_COLOR_CLUSTERS = 3
         private const val COLOR_KMEANS_ITERATIONS = 10
@@ -53,6 +62,18 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         // Performance tuning
         private const val COLOR_SAMPLING_STEP = 3
     }
+    
+    /**
+     * Data class representing detected grid spacing parameters
+     */
+    private data class GridSpacing(
+        val originX: Int,
+        val originY: Int,
+        val cardWidth: Int,
+        val cardHeight: Int,
+        val numCols: Int,
+        val numRows: Int
+    )
     
     // Store detected color clusters globally for all cards
     private var globalColorClusters: List<Triple<Double, Double, Double>> = emptyList()
@@ -75,6 +96,158 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                g < COLOR_DETECTION_THRESHOLD && 
                b < COLOR_DETECTION_THRESHOLD
     }
+    
+    /**
+     * Detects grid spacing using edge projection method
+     * @param mat Source image
+     * @return GridSpacing object if successful, null if detection fails
+     */
+    private fun detectGridSpacingByProjection(mat: Mat): GridSpacing? {
+        var gray: Mat? = null
+        var edges: Mat? = null
+        var kernel: Mat? = null
+        
+        try {
+            // Step 1: Apply Canny edge detection
+            gray = Mat()
+            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+            
+            edges = Mat()
+            Imgproc.Canny(gray, edges, EDGE_CANNY_THRESHOLD_LOW, EDGE_CANNY_THRESHOLD_HIGH)
+            
+            // Optional: morphological closing to connect nearby edges
+            kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+            Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, kernel)
+            
+            // Step 2: Project edges onto X and Y axes
+            val xProjection = projectEdgesToAxis(edges, false)
+            val yProjection = projectEdgesToAxis(edges, true)
+            
+            // Step 3: Find peaks in projections
+            val minDistanceX = mat.width() / (MAX_GRID_COLS * MIN_PEAK_DISTANCE_DIVISOR)
+            val minDistanceY = mat.height() / (GRID_ROWS * MIN_PEAK_DISTANCE_DIVISOR)
+            
+            val xPeaks = findPeaksInProjection(xProjection, minDistanceX)
+            val yPeaks = findPeaksInProjection(yProjection, minDistanceY)
+            
+            // Step 4: Validate peaks
+            if (xPeaks.size < MIN_PEAKS_FOR_VALID_GRID || yPeaks.size < MIN_PEAKS_FOR_VALID_GRID) {
+                return null
+            }
+            
+            // Step 5: Calculate spacing
+            val cardWidth = calculateSpacingFromPeaks(xPeaks)
+            val cardHeight = calculateSpacingFromPeaks(yPeaks)
+            
+            // Validate spacing
+            if (cardWidth < MIN_CARD_SPACING || cardWidth > MAX_CARD_SPACING ||
+                cardHeight < MIN_CARD_SPACING || cardHeight > MAX_CARD_SPACING) {
+                return null
+            }
+            
+            // Step 6: Determine grid origin and dimensions
+            val originX = xPeaks.first()
+            val originY = yPeaks.first()
+            val numCols = xPeaks.size - 1  // N peaks = N-1 cards
+            val numRows = yPeaks.size - 1
+            
+            // Validate grid dimensions
+            if (numRows != GRID_ROWS || numCols < MIN_GRID_COLS || numCols > MAX_GRID_COLS) {
+                return null
+            }
+            
+            return GridSpacing(originX, originY, cardWidth, cardHeight, numCols, numRows)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in edge projection-based grid detection", e)
+            return null
+        } finally {
+            // Clean up resources
+            gray?.release()
+            edges?.release()
+            kernel?.release()
+        }
+    }
+    
+    /**
+     * Projects edge pixels onto an axis
+     * @param edges Edge-detected image
+     * @param horizontal If true, projects onto Y-axis (horizontal projection), else X-axis (vertical projection)
+     * @return 1D histogram of edge density
+     */
+    private fun projectEdgesToAxis(edges: Mat, horizontal: Boolean): FloatArray {
+        if (horizontal) {
+            // Horizontal projection: sum rows → Y-axis density
+            val projection = FloatArray(edges.height())
+            for (row in 0 until edges.height()) {
+                var sum = 0f
+                for (col in 0 until edges.width()) {
+                    if (edges.get(row, col)[0] > 0) sum++
+                }
+                projection[row] = sum
+            }
+            return projection
+        } else {
+            // Vertical projection: sum columns → X-axis density
+            val projection = FloatArray(edges.width())
+            for (col in 0 until edges.width()) {
+                var sum = 0f
+                for (row in 0 until edges.height()) {
+                    if (edges.get(row, col)[0] > 0) sum++
+                }
+                projection[col] = sum
+            }
+            return projection
+        }
+    }
+    
+    /**
+     * Finds peaks in a projection histogram
+     * @param projection 1D histogram
+     * @param minDistance Minimum distance between peaks
+     * @return List of peak positions (indices)
+     */
+    private fun findPeaksInProjection(projection: FloatArray, minDistance: Int): List<Int> {
+        if (projection.isEmpty()) return emptyList()
+        
+        // Calculate threshold
+        val threshold = projection.average().toFloat() * PROJECTION_PEAK_THRESHOLD_MULTIPLIER
+        
+        val peaks = mutableListOf<Int>()
+        
+        // Find local maxima
+        for (i in 1 until projection.size - 1) {
+            if (projection[i] > threshold &&
+                projection[i] > projection[i - 1] &&
+                projection[i] > projection[i + 1]) {
+                
+                // Check distance from last peak
+                if (peaks.isEmpty() || i - peaks.last() >= minDistance) {
+                    peaks.add(i)
+                }
+            }
+        }
+        
+        return peaks
+    }
+    
+    /**
+     * Calculates spacing from peak positions using median
+     * @param peaks List of peak positions
+     * @return Median spacing between consecutive peaks
+     */
+    private fun calculateSpacingFromPeaks(peaks: List<Int>): Int {
+        if (peaks.size < 2) return 0
+        
+        // Calculate distances between consecutive peaks
+        val spacings = peaks.zipWithNext { a, b -> b - a }
+        
+        if (spacings.isEmpty()) return 0
+        
+        // Return median spacing
+        val sorted = spacings.sorted()
+        return sorted[sorted.size / 2]
+    }
 
     /**
      * Detects cards in an image and returns their locations and attributes
@@ -92,18 +265,44 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             
             diagnosticLogger.logSection("Grid-Based Card Detection")
             
-            // Detect grid dimensions (4 or 5 columns)
-            val numCols = detectGridColumns(mat)
-            diagnosticLogger.log("Detected grid: $GRID_ROWS rows × $numCols columns")
+            // Try to detect grid spacing using edge projection
+            val gridSpacing = detectGridSpacingByProjection(mat)
             
-            // Extract all card regions from the grid
-            val cardRegions = mutableListOf<Pair<Triple<Mat, Rect, Float>, Int>>() // (Mat, Rect, rotation), cardIndex
-            for (row in 0 until GRID_ROWS) {
-                for (col in 0 until numCols) {
-                    val cardIndex = row * numCols + col + 1
-                    val (cardRegion, rect, rotation) = extractCardFromGrid(mat, row, col, numCols)
-                    if (cardRegion != null && rect != null) {
-                        cardRegions.add(Pair(Triple(cardRegion, rect, rotation), cardIndex))
+            val cardRegions = mutableListOf<Pair<Triple<Mat, Rect, Float>, Int>>()
+            
+            if (gridSpacing != null) {
+                // Use detected spacing
+                diagnosticLogger.log("Edge projection detected grid: ${gridSpacing.numRows} rows × ${gridSpacing.numCols} columns")
+                diagnosticLogger.log("Grid origin: (${gridSpacing.originX}, ${gridSpacing.originY})")
+                diagnosticLogger.log("Card spacing: ${gridSpacing.cardWidth}x${gridSpacing.cardHeight}")
+                
+                for (row in 0 until gridSpacing.numRows) {
+                    for (col in 0 until gridSpacing.numCols) {
+                        val cardIndex = row * gridSpacing.numCols + col + 1
+                        val baseX = gridSpacing.originX + col * gridSpacing.cardWidth
+                        val baseY = gridSpacing.originY + row * gridSpacing.cardHeight
+                        val (cardRegion, rect, rotation) = extractCardFromGrid(
+                            mat, baseX, baseY, gridSpacing.cardWidth, gridSpacing.cardHeight
+                        )
+                        if (cardRegion != null && rect != null) {
+                            cardRegions.add(Pair(Triple(cardRegion, rect, rotation), cardIndex))
+                        }
+                    }
+                }
+            } else {
+                // Fallback to current uniform subdivision approach
+                diagnosticLogger.log("Edge projection failed, falling back to uniform grid subdivision")
+                
+                val numCols = detectGridColumns(mat)
+                diagnosticLogger.log("Detected grid: $GRID_ROWS rows × $numCols columns")
+                
+                for (row in 0 until GRID_ROWS) {
+                    for (col in 0 until numCols) {
+                        val cardIndex = row * numCols + col + 1
+                        val (cardRegion, rect, rotation) = extractCardFromGrid(mat, row, col, numCols)
+                        if (cardRegion != null && rect != null) {
+                            cardRegions.add(Pair(Triple(cardRegion, rect, rotation), cardIndex))
+                        }
                     }
                 }
             }
@@ -180,6 +379,35 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             val baseX = col * cardWidth
             val baseY = row * cardHeight
             
+            return extractCardFromGrid(mat, baseX, baseY, cardWidth, cardHeight)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting card from grid at ($row, $col)", e)
+            return Triple(null, null, 0f)
+        }
+    }
+    
+    /**
+     * Extracts a card region from the grid at the specified base position with given dimensions
+     * Uses hybrid grid + contour detection
+     * @param mat Source image
+     * @param baseX X coordinate of grid cell origin
+     * @param baseY Y coordinate of grid cell origin
+     * @param cardWidth Width of the grid cell
+     * @param cardHeight Height of the grid cell
+     * @return Triple of (cardRegion Mat, bounding Rect, rotation angle) or (null, null, 0f) if extraction fails
+     */
+    private fun extractCardFromGrid(
+        mat: Mat, 
+        baseX: Int, 
+        baseY: Int, 
+        cardWidth: Int, 
+        cardHeight: Int
+    ): Triple<Mat?, Rect?, Float> {
+        try {
+            val imgWidth = mat.width()
+            val imgHeight = mat.height()
+            
             // Expand search region by SEARCH_MARGIN to allow for card displacement
             val marginX = (cardWidth * SEARCH_MARGIN).toInt()
             val marginY = (cardHeight * SEARCH_MARGIN).toInt()
@@ -228,7 +456,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 return Triple(cardRegion, rect, 0f)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error extracting card from grid at ($row, $col)", e)
+            Log.e(TAG, "Error extracting card from grid at base position ($baseX, $baseY)", e)
             return Triple(null, null, 0f)
         }
     }
