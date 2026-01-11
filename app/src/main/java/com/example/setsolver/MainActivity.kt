@@ -3,6 +3,9 @@ package com.example.setsolver
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.PixelFormat
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -246,6 +249,52 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
+        return when (image.format) {
+            ImageFormat.YUV_420_888 -> {
+                // Current YUV handling code
+                convertYuvToBitmap(image)
+            }
+            ImageFormat.JPEG -> {
+                // JPEG format - decode directly
+                if (image.planes.isEmpty()) {
+                    throw IllegalStateException("JPEG image must have at least 1 plane")
+                }
+                val buffer = image.planes[0].buffer
+                val bytes = ByteArray(buffer.remaining())
+                buffer.get(bytes)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    ?: throw IllegalStateException("Failed to decode JPEG image")
+            }
+            PixelFormat.RGBA_8888 -> {
+                // RGBA format - convert directly
+                convertRgbaToBitmap(image)
+            }
+            else -> {
+                // Fallback: try YUV conversion
+                Log.w(TAG, "Unknown image format: ${image.format}, attempting YUV conversion")
+                try {
+                    convertYuvToBitmap(image)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to convert unknown format, trying JPEG decode", e)
+                    if (image.planes.isEmpty()) {
+                        throw IllegalStateException("Image has no planes, cannot convert format ${image.format}")
+                    }
+                    val buffer = image.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        ?: throw IllegalStateException("Failed to decode image in format ${image.format}")
+                }
+            }
+        }
+    }
+
+    private fun convertYuvToBitmap(image: ImageProxy): Bitmap {
+        // Verify we have 3 planes for YUV
+        if (image.planes.size < 3) {
+            throw IllegalStateException("YUV image must have 3 planes, got ${image.planes.size}")
+        }
+        
         val yBuffer = image.planes[0].buffer
         val uBuffer = image.planes[1].buffer
         val vBuffer = image.planes[2].buffer
@@ -285,6 +334,31 @@ class MainActivity : AppCompatActivity() {
         }
         
         return ImageUtils.yuv420ToBitmap(nv21, image.width, image.height)
+    }
+
+    private fun convertRgbaToBitmap(image: ImageProxy): Bitmap {
+        if (image.planes.isEmpty()) {
+            throw IllegalStateException("RGBA image must have at least 1 plane")
+        }
+        val plane = image.planes[0]
+        val buffer = plane.buffer
+        val pixelStride = plane.pixelStride
+        val rowStride = plane.rowStride
+        val rowPadding = rowStride - pixelStride * image.width
+        
+        val bitmap = Bitmap.createBitmap(
+            image.width + rowPadding / pixelStride,
+            image.height,
+            Bitmap.Config.ARGB_8888
+        )
+        bitmap.copyPixelsFromBuffer(buffer)
+        
+        // Crop if there was padding
+        return if (rowPadding == 0) {
+            bitmap
+        } else {
+            Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
+        }
     }
 
     /**
