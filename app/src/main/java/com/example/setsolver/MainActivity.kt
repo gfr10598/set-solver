@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
@@ -22,6 +25,11 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
         private const val REQUEST_CODE_PERMISSIONS = 10
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        
+        // UI dimension constants
+        private const val SET_BUTTON_MARGIN_END = 16
+        private const val SET_BUTTON_PADDING_HORIZONTAL = 32
+        private const val SET_BUTTON_PADDING_VERTICAL = 16
     }
 
     private enum class UiState {
@@ -191,8 +199,8 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 // Switch to captured image mode
                 currentState = UiState.IMAGE_CAPTURED
-                binding.viewFinder.visibility = android.view.View.GONE
-                binding.capturedImageView.visibility = android.view.View.VISIBLE
+                binding.viewFinder.visibility = View.GONE
+                binding.capturedImageView.visibility = View.VISIBLE
                 binding.capturedImageView.setImageBitmap(capturedBitmap)
                 binding.captureButton.text = getString(R.string.dismiss_button)
                 
@@ -262,15 +270,15 @@ class MainActivity : AppCompatActivity() {
         selectedSetIndex = null
         
         // Update UI
-        binding.capturedImageView.visibility = android.view.View.GONE
-        binding.viewFinder.visibility = android.view.View.VISIBLE
+        binding.capturedImageView.visibility = View.GONE
+        binding.viewFinder.visibility = View.VISIBLE
         binding.captureButton.text = getString(R.string.capture_button)
         binding.statusText.text = ""
         
         // Clear overlays and set buttons
         binding.overlayView.clear()
         binding.setButtonsContainer.removeAllViews()
-        binding.setButtonsScrollView.visibility = android.view.View.GONE
+        binding.setButtonsScrollView.visibility = View.GONE
     }
 
     /**
@@ -280,11 +288,11 @@ class MainActivity : AppCompatActivity() {
         binding.setButtonsContainer.removeAllViews()
         
         if (sets.isEmpty()) {
-            binding.setButtonsScrollView.visibility = android.view.View.GONE
+            binding.setButtonsScrollView.visibility = View.GONE
             return
         }
         
-        binding.setButtonsScrollView.visibility = android.view.View.VISIBLE
+        binding.setButtonsScrollView.visibility = View.VISIBLE
         
         val colors = listOf(
             ContextCompat.getColor(this, R.color.set_highlight_1),
@@ -294,17 +302,22 @@ class MainActivity : AppCompatActivity() {
         )
         
         sets.forEachIndexed { index, _ ->
-            val button = android.widget.Button(this).apply {
+            val button = Button(this).apply {
                 text = getString(R.string.set_button_label, index + 1)
                 setBackgroundColor(colors[index % colors.size])
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    marginEnd = 16
+                    marginEnd = SET_BUTTON_MARGIN_END
                 }
-                setPadding(32, 16, 32, 16)
+                setPadding(
+                    SET_BUTTON_PADDING_HORIZONTAL,
+                    SET_BUTTON_PADDING_VERTICAL,
+                    SET_BUTTON_PADDING_HORIZONTAL,
+                    SET_BUTTON_PADDING_VERTICAL
+                )
                 setOnClickListener { handleSetButtonClick(index) }
             }
             binding.setButtonsContainer.addView(button)
