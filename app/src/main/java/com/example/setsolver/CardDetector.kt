@@ -138,6 +138,7 @@ class CardDetector {
         Core.split(lab, channels)
         
         // Apply CLAHE to the L (lightness) channel
+        // Note: CLAHE objects are managed by OpenCV's Java bindings and GC
         val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
         clahe.apply(channels[0], channels[0])
         
