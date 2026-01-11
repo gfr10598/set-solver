@@ -253,10 +253,12 @@ class MainActivity : AppCompatActivity() {
         
         // Copy and interleave U and V planes for NV21 format
         // NV21 format: YYYYYYYY + VUVUVUVU (V before U, interleaved)
-        val uvPixelStride = image.planes[1].pixelStride
-        val uvRowStride = image.planes[1].rowStride
+        val uPixelStride = image.planes[1].pixelStride
+        val vPixelStride = image.planes[2].pixelStride
+        val uRowStride = image.planes[1].rowStride
+        val vRowStride = image.planes[2].rowStride
         
-        if (uvPixelStride == 1) {
+        if (uPixelStride == 1 && vPixelStride == 1) {
             // Tightly packed - just copy V then U
             vBuffer.get(nv21, ySize, vSize)
             uBuffer.get(nv21, ySize + vSize, uSize)
@@ -268,8 +270,8 @@ class MainActivity : AppCompatActivity() {
             
             for (row in 0 until uvHeight) {
                 for (col in 0 until uvWidth) {
-                    val vPos = row * uvRowStride + col * uvPixelStride
-                    val uPos = row * uvRowStride + col * uvPixelStride
+                    val vPos = row * vRowStride + col * vPixelStride
+                    val uPos = row * uRowStride + col * uPixelStride
                     nv21[pos++] = vBuffer.get(vPos)
                     nv21[pos++] = uBuffer.get(uPos)
                 }
