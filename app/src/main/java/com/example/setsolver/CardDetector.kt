@@ -287,9 +287,10 @@ class CardDetector {
         val bitmap = Bitmap.createBitmap(cardRegion.cols(), cardRegion.rows(), Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(cardRegion, bitmap)
         
-        // Sample only pixels that are part of symbols (non-zero in mask)
-        for (x in 0 until cardRegion.cols()) {
-            for (y in 0 until cardRegion.rows()) {
+        // Sample pixels with a step size for efficiency, but check mask for each
+        val stepSize = 3
+        for (x in 0 until cardRegion.cols() step stepSize) {
+            for (y in 0 until cardRegion.rows() step stepSize) {
                 // Check if this pixel is part of a symbol
                 val maskValue = symbolMask.get(y, x)[0]
                 if (maskValue == 0.0) continue  // Skip background pixels
@@ -307,6 +308,9 @@ class CardDetector {
                 }
             }
         }
+        
+        // Clean up
+        bitmap.recycle()
         
         return when {
             redCount > greenCount && redCount > purpleCount -> Card.CardColor.RED
