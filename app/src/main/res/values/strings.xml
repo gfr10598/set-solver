@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Set Solver</string>
+    <string name="capture_button">Capture</string>
+    <string name="permission_denied">Camera permission is required</string>
+    <string name="no_sets_found">No sets found</string>
+    <string name="sets_found">Sets found: %d</string>
+</resources>
