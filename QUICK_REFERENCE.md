@@ -133,11 +133,6 @@ adb logcat | grep -E "(MainActivity|CardDetector|SetFinder)"
 
 ### Common Issues
 
-#### OpenCV Not Found
-- Ensure OpenCV AAR is in `app/libs/`
-- Check `app/build.gradle` has correct path
-- Clean and rebuild project
-
 #### Camera Permission Denied
 - Uninstall app
 - Reinstall and grant permission

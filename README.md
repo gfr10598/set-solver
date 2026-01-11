@@ -35,7 +35,7 @@ The app uses OpenCV for image processing to:
 
 - Android 7.0 (API 24) or higher
 - Camera permission
-- OpenCV Android SDK (see [BUILD.md](BUILD.md) for setup)
+- All dependencies (including OpenCV 4.12.0) are automatically managed via Gradle
 
 ## Documentation
 

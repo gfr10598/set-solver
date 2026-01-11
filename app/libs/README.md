@@ -1,9 +1,5 @@
-# OpenCV Library
+# Third-party Libraries
 
-Place the OpenCV Android AAR file here.
+**Note**: OpenCV is now automatically fetched from Maven Central as a Gradle dependency.
 
-Download from: https://opencv.org/releases/
-
-The file should be named: `opencv-android-sdk.aar`
-
-Alternatively, you can use the OpenCV module approach described in BUILD.md.
+This directory can be used for any other third-party AAR files if needed in the future.

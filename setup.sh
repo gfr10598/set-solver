@@ -13,19 +13,6 @@ if [ -z "$ANDROID_HOME" ]; then
     echo ""
 fi
 
-# Check for OpenCV
-if [ ! -f "app/libs/opencv-android-sdk.aar" ]; then
-    echo "Warning: OpenCV AAR file not found in app/libs/"
-    echo ""
-    echo "Please download OpenCV for Android from:"
-    echo "https://opencv.org/releases/"
-    echo ""
-    echo "Then copy the AAR file to: app/libs/opencv-android-sdk.aar"
-    echo ""
-    echo "For detailed instructions, see BUILD.md"
-    echo ""
-fi
-
 # Make gradlew executable
 if [ -f "gradlew" ]; then
     chmod +x gradlew
@@ -36,7 +23,7 @@ echo ""
 echo "Setup complete!"
 echo ""
 echo "Next steps:"
-echo "1. Install OpenCV (if not already done)"
-echo "2. Open project in Android Studio, or"
-echo "3. Build from command line: ./gradlew assembleDebug"
+echo "1. Open project in Android Studio, or"
+echo "2. Build from command line: ./gradlew assembleDebug"
+echo "   (Dependencies including OpenCV will be downloaded automatically)"
 echo ""

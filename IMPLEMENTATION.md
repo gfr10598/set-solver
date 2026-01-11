@@ -114,8 +114,8 @@ androidx.camera:camera-camera2:1.3.1
 androidx.camera:camera-lifecycle:1.3.1
 androidx.camera:camera-view:1.3.1
 
-// OpenCV (manual installation required)
-files('libs/opencv-android-sdk.aar')
+// OpenCV (from Maven Central)
+org.opencv:opencv:4.12.0
 
 // Testing
 junit:junit:4.13.2
@@ -134,9 +134,8 @@ junit:junit:4.13.2
 See [BUILD.md](BUILD.md) for complete instructions. Quick summary:
 
 1. Install Android Studio
-2. Download and configure OpenCV Android SDK
-3. Open project in Android Studio
-4. Build and run
+2. Open project in Android Studio (dependencies will be downloaded automatically)
+3. Build and run
 
 Or use command line:
 ```bash
@@ -199,4 +198,4 @@ This implementation provides a complete, working Android application that fulfil
 - ✅ Finds valid Sets
 - ✅ Highlights Sets with colors
 
-The app is ready to be built and tested on Android devices. Setup requires manual installation of OpenCV due to its unavailability in standard Maven repositories, but comprehensive instructions are provided in BUILD.md.
+The app is ready to be built and tested on Android devices. All dependencies including OpenCV are automatically managed via Gradle and Maven Central.
