@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
@@ -22,6 +25,16 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
         private const val REQUEST_CODE_PERMISSIONS = 10
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        
+        // UI dimension constants
+        private const val SET_BUTTON_MARGIN_END = 16
+        private const val SET_BUTTON_PADDING_HORIZONTAL = 32
+        private const val SET_BUTTON_PADDING_VERTICAL = 16
+    }
+
+    private enum class UiState {
+        LIVE_PREVIEW,
+        IMAGE_CAPTURED
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -31,6 +44,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var diagnosticLogger: DiagnosticLogger
     private lateinit var cardDetector: CardDetector
     private lateinit var setFinder: SetFinder
+    
+    // State management for capture flow
+    private var currentState: UiState = UiState.LIVE_PREVIEW
+    private var capturedBitmap: Bitmap? = null
+    private var detectedSets: List<Triple<Card, Card, Card>> = emptyList()
+    private var selectedSetIndex: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +101,10 @@ class MainActivity : AppCompatActivity() {
 
         // Set up capture button
         binding.captureButton.setOnClickListener {
-            captureAndProcess()
+            when (currentState) {
+                UiState.LIVE_PREVIEW -> captureAndProcess()
+                UiState.IMAGE_CAPTURED -> dismissCapturedImage()
+            }
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -163,14 +185,25 @@ class MainActivity : AppCompatActivity() {
             // Convert ImageProxy to Bitmap
             val bitmap = imageProxyToBitmap(image)
             
+            // Save the bitmap for display
+            capturedBitmap = bitmap.copy(bitmap.config, false)
+            
             // Detect cards in the image
             val cards = cardDetector.detectCards(bitmap)
             
             // Find sets among the detected cards
             val sets = setFinder.findAllSets(cards)
+            detectedSets = sets
             
             // Update UI on main thread
             runOnUiThread {
+                // Switch to captured image mode
+                currentState = UiState.IMAGE_CAPTURED
+                binding.viewFinder.visibility = View.GONE
+                binding.capturedImageView.visibility = View.VISIBLE
+                binding.capturedImageView.setImageBitmap(capturedBitmap)
+                binding.captureButton.text = getString(R.string.dismiss_button)
+                
                 if (cards.isEmpty()) {
                     binding.statusText.text = "No cards detected"
                     binding.overlayView.clear()
@@ -184,6 +217,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     binding.statusText.text = getString(R.string.sets_found, sets.size)
                     binding.overlayView.setSets(sets)
+                    createSetButtons(sets)
                     diagnosticLogger.logSection("Result")
                     diagnosticLogger.log("SUCCESS: Found ${sets.size} valid set(s)")
                 }
@@ -215,6 +249,94 @@ class MainActivity : AppCompatActivity() {
             image.width,
             image.height
         )
+    }
+
+    /**
+     * Dismisses the captured image and returns to live preview mode
+     */
+    private fun dismissCapturedImage() {
+        currentState = UiState.LIVE_PREVIEW
+        
+        // Clear the captured bitmap
+        capturedBitmap?.let {
+            if (!it.isRecycled) {
+                it.recycle()
+            }
+        }
+        capturedBitmap = null
+        
+        // Reset state
+        detectedSets = emptyList()
+        selectedSetIndex = null
+        
+        // Update UI
+        binding.capturedImageView.visibility = View.GONE
+        binding.viewFinder.visibility = View.VISIBLE
+        binding.captureButton.text = getString(R.string.capture_button)
+        binding.statusText.text = ""
+        
+        // Clear overlays and set buttons
+        binding.overlayView.clear()
+        binding.setButtonsContainer.removeAllViews()
+        binding.setButtonsScrollView.visibility = View.GONE
+    }
+
+    /**
+     * Creates interactive buttons for each detected set
+     */
+    private fun createSetButtons(sets: List<Triple<Card, Card, Card>>) {
+        binding.setButtonsContainer.removeAllViews()
+        
+        if (sets.isEmpty()) {
+            binding.setButtonsScrollView.visibility = View.GONE
+            return
+        }
+        
+        binding.setButtonsScrollView.visibility = View.VISIBLE
+        
+        val colors = listOf(
+            ContextCompat.getColor(this, R.color.set_highlight_1),
+            ContextCompat.getColor(this, R.color.set_highlight_2),
+            ContextCompat.getColor(this, R.color.set_highlight_3),
+            ContextCompat.getColor(this, R.color.set_highlight_4)
+        )
+        
+        sets.forEachIndexed { index, _ ->
+            val button = Button(this).apply {
+                text = getString(R.string.set_button_label, index + 1)
+                setBackgroundColor(colors[index % colors.size])
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = SET_BUTTON_MARGIN_END
+                }
+                setPadding(
+                    SET_BUTTON_PADDING_HORIZONTAL,
+                    SET_BUTTON_PADDING_VERTICAL,
+                    SET_BUTTON_PADDING_HORIZONTAL,
+                    SET_BUTTON_PADDING_VERTICAL
+                )
+                setOnClickListener { handleSetButtonClick(index) }
+            }
+            binding.setButtonsContainer.addView(button)
+        }
+    }
+
+    /**
+     * Handles click on a set button to highlight/unhighlight that set
+     */
+    private fun handleSetButtonClick(setIndex: Int) {
+        if (selectedSetIndex == setIndex) {
+            // Clicking the same button again - deselect
+            selectedSetIndex = null
+            binding.overlayView.highlightSet(null)
+        } else {
+            // Select this set
+            selectedSetIndex = setIndex
+            binding.overlayView.highlightSet(setIndex)
+        }
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {

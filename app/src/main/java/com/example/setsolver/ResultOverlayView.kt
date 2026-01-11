@@ -19,6 +19,7 @@ class ResultOverlayView @JvmOverloads constructor(
     private val paints = mutableListOf<Paint>()
     private var sets: List<Triple<Card, Card, Card>> = emptyList()
     private var allCards: List<Card> = emptyList()
+    private var highlightedSetIndex: Int? = null
     
     private val cardBoundaryPaint = Paint().apply {
         color = context.getColor(R.color.card_boundary)
@@ -31,6 +32,12 @@ class ResultOverlayView @JvmOverloads constructor(
         color = context.getColor(R.color.card_detected)
         style = Paint.Style.STROKE
         strokeWidth = 6f
+        isAntiAlias = true
+    }
+    
+    private val greyOverlayPaint = Paint().apply {
+        color = 0x99808080.toInt() // Semi-transparent grey
+        style = Paint.Style.FILL
         isAntiAlias = true
     }
     
@@ -83,6 +90,15 @@ class ResultOverlayView @JvmOverloads constructor(
     fun clear() {
         sets = emptyList()
         allCards = emptyList()
+        highlightedSetIndex = null
+        invalidate()
+    }
+
+    /**
+     * Highlights a specific set by index, or clears highlighting if null
+     */
+    fun highlightSet(setIndex: Int?) {
+        highlightedSetIndex = setIndex
         invalidate()
     }
 
@@ -96,18 +112,58 @@ class ResultOverlayView @JvmOverloads constructor(
             }
         }
         
-        // Draw rectangles around cards in each set
-        sets.forEachIndexed { index, set ->
-            val paint = paints[index % paints.size]
-            
-            // Draw rectangle for each card in the set
-            drawCardRect(canvas, set.first, paint)
-            drawCardRect(canvas, set.second, paint)
-            drawCardRect(canvas, set.third, paint)
-            
-            // Draw connecting lines between cards in the set
-            drawConnectingLines(canvas, set, paint)
+        // If a specific set is highlighted, grey out all other cards
+        if (highlightedSetIndex != null && sets.isNotEmpty()) {
+            val selectedIndex = highlightedSetIndex!! // Store in local variable
+            val highlightedSet = sets.getOrNull(selectedIndex)
+            if (highlightedSet != null) {
+                // Get all cards from all sets
+                val highlightedCards = setOf(
+                    highlightedSet.first,
+                    highlightedSet.second,
+                    highlightedSet.third
+                )
+                
+                // Grey out all cards that are not in the highlighted set
+                sets.forEachIndexed { index, set ->
+                    if (index != selectedIndex) {
+                        drawGreyOverlay(canvas, set.first)
+                        drawGreyOverlay(canvas, set.second)
+                        drawGreyOverlay(canvas, set.third)
+                    }
+                }
+                
+                // Draw only the highlighted set with its color
+                val paint = paints[selectedIndex % paints.size]
+                drawCardRect(canvas, highlightedSet.first, paint)
+                drawCardRect(canvas, highlightedSet.second, paint)
+                drawCardRect(canvas, highlightedSet.third, paint)
+                drawConnectingLines(canvas, highlightedSet, paint)
+            }
+        } else {
+            // Draw rectangles around cards in each set (normal mode)
+            sets.forEachIndexed { index, set ->
+                val paint = paints[index % paints.size]
+                
+                // Draw rectangle for each card in the set
+                drawCardRect(canvas, set.first, paint)
+                drawCardRect(canvas, set.second, paint)
+                drawCardRect(canvas, set.third, paint)
+                
+                // Draw connecting lines between cards in the set
+                drawConnectingLines(canvas, set, paint)
+            }
         }
+    }
+
+    private fun drawGreyOverlay(canvas: Canvas, card: Card) {
+        val rect = RectF(
+            card.x,
+            card.y,
+            card.x + card.width,
+            card.y + card.height
+        )
+        canvas.drawRect(rect, greyOverlayPaint)
     }
 
     private fun drawCardRect(canvas: Canvas, card: Card, paint: Paint) {

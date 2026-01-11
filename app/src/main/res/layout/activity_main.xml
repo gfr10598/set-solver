@@ -26,6 +26,18 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <ImageView
+            android:id="@+id/capturedImageView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/captured_image_description"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <com.example.setsolver.ResultOverlayView
             android:id="@+id/overlayView"
             android:layout_width="0dp"
@@ -87,6 +99,24 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <HorizontalScrollView
+            android:id="@+id/setButtonsScrollView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:background="@color/diagnostics_header_background"
+            android:padding="8dp"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/diagnosticsHeader">
+
+            <LinearLayout
+                android:id="@+id/setButtonsContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
         <com.example.setsolver.DiagnosticsView
             android:id="@+id/diagnosticsView"
             android:layout_width="0dp"
@@ -95,7 +125,7 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/diagnosticsHeader" />
+            app:layout_constraintTop_toBottomOf="@+id/setButtonsScrollView" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 
