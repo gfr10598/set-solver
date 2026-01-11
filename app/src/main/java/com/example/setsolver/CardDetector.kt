@@ -17,6 +17,17 @@ class CardDetector {
         private const val TAG = "CardDetector"
         private const val MIN_CARD_AREA = 5000.0
         private const val MAX_CARD_AREA = 500000.0
+        
+        // Color detection thresholds
+        private const val COLOR_CHANNEL_THRESHOLD = 20
+        private const val PURPLE_MIN_RB_VALUE = 80
+        
+        // Shading detection thresholds
+        private const val SOLID_FILL_RATIO = 0.35
+        private const val STRIPED_FILL_RATIO = 0.15
+        
+        // Performance tuning
+        private const val COLOR_SAMPLING_STEP = 3
     }
 
     /**
@@ -288,9 +299,8 @@ class CardDetector {
         Utils.matToBitmap(cardRegion, bitmap)
         
         // Sample pixels with a step size for efficiency, but check mask for each
-        val stepSize = 3
-        for (x in 0 until cardRegion.cols() step stepSize) {
-            for (y in 0 until cardRegion.rows() step stepSize) {
+        for (x in 0 until cardRegion.cols() step COLOR_SAMPLING_STEP) {
+            for (y in 0 until cardRegion.rows() step COLOR_SAMPLING_STEP) {
                 // Check if this pixel is part of a symbol
                 val maskValue = symbolMask.get(y, x)[0]
                 if (maskValue == 0.0) continue  // Skip background pixels
@@ -302,9 +312,9 @@ class CardDetector {
                 
                 // Classify color based on dominant channel
                 when {
-                    r > g + 20 && r > b + 20 -> redCount++
-                    g > r + 20 && g > b + 20 -> greenCount++
-                    b > r + 20 || (r > 80 && b > 80 && b > g) -> purpleCount++
+                    r > g + COLOR_CHANNEL_THRESHOLD && r > b + COLOR_CHANNEL_THRESHOLD -> redCount++
+                    g > r + COLOR_CHANNEL_THRESHOLD && g > b + COLOR_CHANNEL_THRESHOLD -> greenCount++
+                    b > r + COLOR_CHANNEL_THRESHOLD || (r > PURPLE_MIN_RB_VALUE && b > PURPLE_MIN_RB_VALUE && b > g) -> purpleCount++
                 }
             }
         }
@@ -342,8 +352,8 @@ class CardDetector {
         
         // Adjusted thresholds based on normalized images
         return when {
-            fillRatio > 0.35 -> Card.Shading.SOLID
-            fillRatio > 0.15 -> Card.Shading.STRIPED
+            fillRatio > SOLID_FILL_RATIO -> Card.Shading.SOLID
+            fillRatio > STRIPED_FILL_RATIO -> Card.Shading.STRIPED
             else -> Card.Shading.OPEN
         }
     }
