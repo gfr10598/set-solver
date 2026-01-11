@@ -20,6 +20,8 @@ class ResultOverlayView @JvmOverloads constructor(
     private var sets: List<Triple<Card, Card, Card>> = emptyList()
     private var allCards: List<Card> = emptyList()
     private var highlightedSetIndex: Int? = null
+    private var imageWidth: Float = 1f
+    private var imageHeight: Float = 1f
     
     private var imageWidth: Float = 1f
     private var imageHeight: Float = 1f
@@ -95,6 +97,15 @@ class ResultOverlayView @JvmOverloads constructor(
      */
     fun setCards(cards: List<Card>) {
         allCards = cards
+        invalidate()
+    }
+
+    /**
+     * Sets the dimensions of the source image for coordinate transformation
+     */
+    fun setImageDimensions(width: Int, height: Int) {
+        imageWidth = width.toFloat()
+        imageHeight = height.toFloat()
         invalidate()
     }
 
@@ -184,11 +195,11 @@ class ResultOverlayView @JvmOverloads constructor(
     }
 
     private fun drawCardRect(canvas: Canvas, card: Card, paint: Paint) {
-        // Calculate scale factors to map image coordinates to view coordinates
+        // Calculate scale factors from image space to view space
         val scaleX = width.toFloat() / imageWidth
         val scaleY = height.toFloat() / imageHeight
         
-        // Transform card coordinates from image space to screen space
+        // Transform card coordinates from image to screen space
         val rect = RectF(
             card.x * scaleX,
             card.y * scaleY,
@@ -210,7 +221,6 @@ class ResultOverlayView @JvmOverloads constructor(
         val centerX3 = (set.third.x + set.third.width / 2) * scaleX
         val centerY3 = (set.third.y + set.third.height / 2) * scaleY
         
-        // Draw thin lines connecting the centers
         val linePaint = Paint(paint).apply {
             strokeWidth = 3f
             alpha = 128

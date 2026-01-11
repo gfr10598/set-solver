@@ -191,6 +191,11 @@ class MainActivity : AppCompatActivity() {
             // Detect cards in the image
             val cards = cardDetector.detectCards(bitmap)
             
+            // Tell overlay the image dimensions so it can scale coordinates
+            runOnUiThread {
+                binding.overlayView.setImageDimensions(bitmap.width, bitmap.height)
+            }
+            
             // Find sets among the detected cards
             val sets = setFinder.findAllSets(cards)
             detectedSets = sets
