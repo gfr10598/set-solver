@@ -228,4 +228,43 @@ class SetFinderTest {
 
         assertFalse(setFinder.isValidSet(card1, card2, card3))
     }
+
+    @Test
+    fun testInvalidSet_threeIdenticalAttributesDifferentPositions() {
+        // Three cards with same attributes but different positions should be rejected
+        // This simulates the real-world case where the camera detects three cards with
+        // identical patterns at different locations
+        val card1 = Card(
+            Card.Number.TWO,
+            Card.Shape.OVAL,
+            Card.CardColor.GREEN,
+            Card.Shading.STRIPED,
+            x = 100f,
+            y = 50f,
+            width = 200f,
+            height = 300f
+        )
+        val card2 = Card(
+            Card.Number.TWO,
+            Card.Shape.OVAL,
+            Card.CardColor.GREEN,
+            Card.Shading.STRIPED,
+            x = 400f,
+            y = 50f,
+            width = 200f,
+            height = 300f
+        )
+        val card3 = Card(
+            Card.Number.TWO,
+            Card.Shape.OVAL,
+            Card.CardColor.GREEN,
+            Card.Shading.STRIPED,
+            x = 700f,
+            y = 50f,
+            width = 200f,
+            height = 300f
+        )
+
+        assertFalse(setFinder.isValidSet(card1, card2, card3))
+    }
 }
