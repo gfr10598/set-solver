@@ -12,9 +12,8 @@ This guide explains how to build and run the Set Solver Android app.
    - Target SDK: API 34 (Android 14)
    - Compile SDK: API 34
 
-3. **OpenCV for Android**
-   - Download the OpenCV Android SDK from: https://opencv.org/releases/
-   - Version: 4.8.0 or later
+3. **Gradle** (included via wrapper)
+   - All dependencies including OpenCV are automatically fetched from Maven Central
 
 ## Setup Instructions
 
@@ -25,38 +24,16 @@ git clone https://github.com/gfr10598/set-solver.git
 cd set-solver
 ```
 
-### 2. Install OpenCV
-
-Since OpenCV is not available in Maven Central for Android, you need to add it manually:
-
-#### Option A: Using OpenCV AAR (Recommended)
-
-1. Download OpenCV Android SDK from https://opencv.org/releases/
-2. Extract the downloaded ZIP file
-3. Create a `libs` directory in the `app` folder:
-   ```bash
-   mkdir -p app/libs
-   ```
-4. Copy the OpenCV AAR file to the libs directory:
-   ```bash
-   cp opencv-android-sdk/sdk/native/libs/opencv-*.aar app/libs/opencv-android-sdk.aar
-   ```
-
-#### Option B: Using OpenCV as a Module
-
-1. Download and extract OpenCV Android SDK
-2. In Android Studio, go to File → New → Import Module
-3. Select the `sdk/java` folder from the extracted OpenCV
-4. Add the module as a dependency in `app/build.gradle`
-
-### 3. Open Project in Android Studio
+### 2. Open Project in Android Studio
 
 1. Launch Android Studio
 2. Select "Open an Existing Project"
 3. Navigate to the cloned repository and select it
 4. Wait for Gradle to sync
 
-### 4. Build the Project
+### 3. Build the Project
+
+**Note**: Gradle will automatically download all dependencies, including OpenCV 4.12.0 from Maven Central. This may take a few minutes on first build.
 
 #### Using Android Studio
 
@@ -71,7 +48,7 @@ Since OpenCV is not available in Maven Central for Android, you need to add it m
 
 The APK will be generated at: `app/build/outputs/apk/debug/app-debug.apk`
 
-### 5. Run on Device or Emulator
+### 4. Run on Device or Emulator
 
 #### Using Android Studio
 
@@ -146,8 +123,8 @@ A Set is valid when for each of the four attributes, the values are either:
 ### OpenCV Initialization Failed
 
 If you see "OpenCV initialization failed":
-1. Ensure OpenCV is properly installed (see Setup Instructions)
-2. Check that the OpenCV AAR is in the `app/libs` directory
+1. Ensure Gradle successfully downloaded OpenCV from Maven Central
+2. Check your internet connection during the initial build
 3. Clean and rebuild the project: `./gradlew clean assembleDebug`
 
 ### Camera Permission Denied
