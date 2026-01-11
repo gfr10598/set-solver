@@ -34,6 +34,10 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         private const val MAX_GRID_COLS = 5
         private const val CARD_DIM_VARIANCE_THRESHOLD = 0.3 // 30% variance allowed
         
+        // Hybrid detection constants
+        private const val SEARCH_MARGIN = 0.15 // 15% expansion of grid cell for search region
+        private const val CONTOUR_APPROX_EPSILON = 0.02 // 2% deviation allowed for polygon approximation
+        
         // Color clustering constants
         private const val MAX_COLOR_CLUSTERS = 3
         private const val COLOR_KMEANS_ITERATIONS = 10
@@ -93,13 +97,13 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             diagnosticLogger.log("Detected grid: $GRID_ROWS rows × $numCols columns")
             
             // Extract all card regions from the grid
-            val cardRegions = mutableListOf<Triple<Mat, Rect, Int>>() // Mat, Rect, cardIndex
+            val cardRegions = mutableListOf<Pair<Triple<Mat, Rect, Float>, Int>>() // (Mat, Rect, rotation), cardIndex
             for (row in 0 until GRID_ROWS) {
                 for (col in 0 until numCols) {
                     val cardIndex = row * numCols + col + 1
-                    val (cardRegion, rect) = extractCardFromGrid(mat, row, col, numCols)
+                    val (cardRegion, rect, rotation) = extractCardFromGrid(mat, row, col, numCols)
                     if (cardRegion != null && rect != null) {
-                        cardRegions.add(Triple(cardRegion, rect, cardIndex))
+                        cardRegions.add(Pair(Triple(cardRegion, rect, rotation), cardIndex))
                     }
                 }
             }
@@ -111,16 +115,17 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             diagnosticLogger.log("${validatedRegions.size} cards passed dimension validation")
             
             // Build global color histogram from all cards
-            globalColorClusters = buildGlobalColorClusters(validatedRegions.map { it.first })
+            globalColorClusters = buildGlobalColorClusters(validatedRegions.map { it.first.first })
             diagnosticLogger.log("Detected ${globalColorClusters.size} color cluster(s)")
             
             diagnosticLogger.logSection("Feature Extraction")
             
             // Recognize each card
             val cards = mutableListOf<Card>()
-            for ((cardRegion, rect, cardIndex) in validatedRegions) {
+            for ((cardData, cardIndex) in validatedRegions) {
+                val (cardRegion, rect, rotation) = cardData
                 diagnosticLogger.log("Processing card $cardIndex at grid position")
-                val card = recognizeCard(cardRegion, rect, 0f, cardIndex)
+                val card = recognizeCard(cardRegion, rect, rotation, cardIndex)
                 if (card != null) {
                     cards.add(card)
                 }
@@ -159,40 +164,234 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
     }
     
     /**
-     * Extracts a card region from the grid at the specified position
-     * @return Pair of (cardRegion Mat, bounding Rect) or (null, null) if extraction fails
+     * Extracts a card region from the grid at the specified position using hybrid grid + contour detection
+     * @return Triple of (cardRegion Mat, bounding Rect, rotation angle) or (null, null, 0f) if extraction fails
      */
-    private fun extractCardFromGrid(mat: Mat, row: Int, col: Int, numCols: Int): Pair<Mat?, Rect?> {
+    private fun extractCardFromGrid(mat: Mat, row: Int, col: Int, numCols: Int): Triple<Mat?, Rect?, Float> {
         try {
             val imgWidth = mat.width()
             val imgHeight = mat.height()
             
-            // Calculate card dimensions with small margins to avoid border noise
+            // Calculate card dimensions for the grid cell
             val cardWidth = imgWidth / numCols
             val cardHeight = imgHeight / GRID_ROWS
             
-            // Add small margin (5% on each side) to avoid card edges
-            val marginX = (cardWidth * 0.05).toInt()
-            val marginY = (cardHeight * 0.05).toInt()
+            // Calculate base grid position
+            val baseX = col * cardWidth
+            val baseY = row * cardHeight
             
-            // Calculate card position
-            val x = col * cardWidth + marginX
-            val y = row * cardHeight + marginY
-            val w = cardWidth - 2 * marginX
-            val h = cardHeight - 2 * marginY
+            // Expand search region by SEARCH_MARGIN to allow for card displacement
+            val marginX = (cardWidth * SEARCH_MARGIN).toInt()
+            val marginY = (cardHeight * SEARCH_MARGIN).toInt()
+            
+            // Calculate expanded search region
+            val searchX = (baseX - marginX).coerceAtLeast(0)
+            val searchY = (baseY - marginY).coerceAtLeast(0)
+            val searchW = (cardWidth + 2 * marginX).coerceAtMost(imgWidth - searchX)
+            val searchH = (cardHeight + 2 * marginY).coerceAtMost(imgHeight - searchY)
             
             // Ensure bounds are valid
-            if (x < 0 || y < 0 || x + w > imgWidth || y + h > imgHeight || w <= 0 || h <= 0) {
-                return Pair(null, null)
+            if (searchX < 0 || searchY < 0 || searchX + searchW > imgWidth || searchY + searchH > imgHeight || searchW <= 0 || searchH <= 0) {
+                return Triple(null, null, 0f)
+            }
+            
+            val searchRect = Rect(searchX, searchY, searchW, searchH)
+            val searchRegion = mat.submat(searchRect)
+            
+            // Try to find card contour within search region
+            val contourResult = findCardContourInRegion(searchRegion)
+            
+            if (contourResult != null) {
+                // Extract rotated card using the detected contour
+                val (cardMat, actualRect, rotation) = extractRotatedCard(mat, contourResult, searchX, searchY)
+                searchRegion.release()
+                return Triple(cardMat, actualRect, rotation)
+            } else {
+                // Fallback to simple grid extraction with small margin to avoid edges
+                val fallbackMarginX = (cardWidth * 0.05).toInt()
+                val fallbackMarginY = (cardHeight * 0.05).toInt()
+                
+                val x = baseX + fallbackMarginX
+                val y = baseY + fallbackMarginY
+                val w = cardWidth - 2 * fallbackMarginX
+                val h = cardHeight - 2 * fallbackMarginY
+                
+                if (x < 0 || y < 0 || x + w > imgWidth || y + h > imgHeight || w <= 0 || h <= 0) {
+                    searchRegion.release()
+                    return Triple(null, null, 0f)
+                }
+                
+                val rect = Rect(x, y, w, h)
+                val cardRegion = mat.submat(rect)
+                searchRegion.release()
+                
+                return Triple(cardRegion, rect, 0f)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting card from grid at ($row, $col)", e)
+            return Triple(null, null, 0f)
+        }
+    }
+    
+    /**
+     * Finds a card contour within a search region using contour detection
+     * @param region Search region Mat
+     * @return RotatedRect of the card if found, null otherwise
+     */
+    private fun findCardContourInRegion(region: Mat): RotatedRect? {
+        try {
+            // Early validation - check if region is valid and has minimum dimensions
+            if (region.empty() || region.width() < 10 || region.height() < 10) {
+                return null
+            }
+            
+            // Convert to grayscale
+            val gray = Mat()
+            Imgproc.cvtColor(region, gray, Imgproc.COLOR_RGB2GRAY)
+            
+            // Apply Gaussian blur to reduce noise
+            val blurred = Mat()
+            Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
+            
+            // Apply adaptive thresholding
+            val thresh = Mat()
+            Imgproc.adaptiveThreshold(
+                blurred, thresh, 255.0,
+                Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+                Imgproc.THRESH_BINARY_INV,
+                11, 2.0
+            )
+            
+            // Find contours
+            val contours = ArrayList<MatOfPoint>()
+            val hierarchy = Mat()
+            Imgproc.findContours(
+                thresh, contours, hierarchy,
+                Imgproc.RETR_EXTERNAL,
+                Imgproc.CHAIN_APPROX_SIMPLE
+            )
+            
+            // Find the largest quadrilateral contour that matches card area
+            var bestContour: MatOfPoint? = null
+            var maxArea = 0.0
+            
+            for (contour in contours) {
+                val area = Imgproc.contourArea(contour)
+                
+                // Check if area is within expected range for a card
+                if (area < MIN_CARD_AREA || area > MAX_CARD_AREA) continue
+                
+                // Approximate contour to polygon - use try-finally for cleanup
+                val curve = MatOfPoint2f(*contour.toArray())
+                val approx = MatOfPoint2f()
+                try {
+                    val perimeter = Imgproc.arcLength(curve, true)
+                    Imgproc.approxPolyDP(curve, approx, CONTOUR_APPROX_EPSILON * perimeter, true)
+                    
+                    // Check if it's a quadrilateral (4 vertices)
+                    if (approx.rows() == 4 && area > maxArea) {
+                        maxArea = area
+                        bestContour = contour
+                    }
+                } finally {
+                    curve.release()
+                    approx.release()
+                }
+            }
+            
+            // Clean up
+            gray.release()
+            blurred.release()
+            thresh.release()
+            hierarchy.release()
+            
+            // If we found a good contour, get its rotated bounding box
+            if (bestContour != null) {
+                val points = MatOfPoint2f(*bestContour.toArray())
+                val rotatedRect = Imgproc.minAreaRect(points)
+                points.release()
+                contours.forEach { it.release() }
+                return rotatedRect
+            }
+            
+            contours.forEach { it.release() }
+            return null
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finding card contour in region", e)
+            return null
+        }
+    }
+    
+    /**
+     * Extracts and de-rotates a card region from the image
+     * @param mat Source image
+     * @param rotatedRect Rotated rectangle defining the card boundaries
+     * @param offsetX X offset of search region in source image
+     * @param offsetY Y offset of search region in source image
+     * @return Triple of (extracted card Mat, bounding Rect, rotation angle) or (null, null, 0f) if extraction fails
+     */
+    private fun extractRotatedCard(mat: Mat, rotatedRect: RotatedRect, offsetX: Int, offsetY: Int): Triple<Mat?, Rect?, Float> {
+        try {
+            // Get rotation angle
+            var angle = rotatedRect.angle.toFloat()
+            val size = rotatedRect.size
+            
+            // Adjust angle to ensure card is upright
+            // OpenCV's minAreaRect returns angle in range [-90, 0]
+            // We need to handle the card orientation properly
+            var width = size.width
+            var height = size.height
+            
+            if (width < height) {
+                // Swap dimensions and adjust angle
+                val temp = width
+                width = height
+                height = temp
+                angle += 90f
+            }
+            
+            // Normalize angle to [-180, 180] range using robust normalization
+            angle = ((angle % 360 + 540) % 360 - 180).toFloat()
+            
+            // Adjust center to source image coordinates
+            val center = Point(
+                rotatedRect.center.x + offsetX,
+                rotatedRect.center.y + offsetY
+            )
+            
+            // Get rotation matrix
+            val rotMat = Imgproc.getRotationMatrix2D(center, angle.toDouble(), 1.0)
+            
+            // Rotate the entire image
+            val rotated = Mat()
+            Imgproc.warpAffine(mat, rotated, rotMat, mat.size())
+            
+            // Extract the upright card region
+            val x = (center.x - width / 2.0).toInt().coerceAtLeast(0)
+            val y = (center.y - height / 2.0).toInt().coerceAtLeast(0)
+            val w = width.toInt().coerceAtMost(rotated.width() - x)
+            val h = height.toInt().coerceAtMost(rotated.height() - y)
+            
+            if (w <= 0 || h <= 0) {
+                rotated.release()
+                rotMat.release()
+                // Return null values for failure case
+                return Triple(null, null, 0f)
             }
             
             val rect = Rect(x, y, w, h)
-            val cardRegion = mat.submat(rect)
+            val cardRegion = rotated.submat(rect).clone()
             
-            return Pair(cardRegion, rect)
+            // Clean up
+            rotated.release()
+            rotMat.release()
+            
+            return Triple(cardRegion, rect, angle)
+            
         } catch (e: Exception) {
-            Log.e(TAG, "Error extracting card from grid at ($row, $col)", e)
-            return Pair(null, null)
+            Log.e(TAG, "Error extracting rotated card", e)
+            return Triple(null, null, 0f)
         }
     }
     
@@ -201,19 +400,20 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
      * Filters out outliers that differ significantly from the median
      */
     private fun validateCardDimensions(
-        cardRegions: List<Triple<Mat, Rect, Int>>
-    ): List<Triple<Mat, Rect, Int>> {
+        cardRegions: List<Pair<Triple<Mat, Rect, Float>, Int>>
+    ): List<Pair<Triple<Mat, Rect, Float>, Int>> {
         if (cardRegions.isEmpty()) return emptyList()
         
         // Calculate median width and height
-        val widths = cardRegions.map { it.second.width }.sorted()
-        val heights = cardRegions.map { it.second.height }.sorted()
+        val widths = cardRegions.map { it.first.second.width }.sorted()
+        val heights = cardRegions.map { it.first.second.height }.sorted()
         
         val medianWidth = widths[widths.size / 2]
         val medianHeight = heights[heights.size / 2]
         
         // Filter cards that are within acceptable variance of median
-        return cardRegions.filter { (_, rect, _) ->
+        return cardRegions.filter { (cardData, _) ->
+            val rect = cardData.second
             val widthRatio = rect.width.toDouble() / medianWidth
             val heightRatio = rect.height.toDouble() / medianHeight
             
