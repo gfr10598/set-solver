@@ -18,6 +18,21 @@ class ResultOverlayView @JvmOverloads constructor(
 
     private val paints = mutableListOf<Paint>()
     private var sets: List<Triple<Card, Card, Card>> = emptyList()
+    private var allCards: List<Card> = emptyList()
+    
+    private val cardBoundaryPaint = Paint().apply {
+        color = context.getColor(R.color.card_boundary)
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        isAntiAlias = true
+    }
+    
+    private val cardDetectedPaint = Paint().apply {
+        color = context.getColor(R.color.card_detected)
+        style = Paint.Style.STROKE
+        strokeWidth = 6f
+        isAntiAlias = true
+    }
     
     init {
         // Create paints for different set highlights
@@ -43,6 +58,22 @@ class ResultOverlayView @JvmOverloads constructor(
      */
     fun setSets(newSets: List<Triple<Card, Card, Card>>) {
         sets = newSets
+        // Extract all unique cards from sets
+        val cardsInSets = mutableListOf<Card>()
+        newSets.forEach {
+            cardsInSets.add(it.first)
+            cardsInSets.add(it.second)
+            cardsInSets.add(it.third)
+        }
+        allCards = cardsInSets.distinct()
+        invalidate()
+    }
+    
+    /**
+     * Updates the view with all detected cards
+     */
+    fun setCards(cards: List<Card>) {
+        allCards = cards
         invalidate()
     }
 
@@ -51,11 +82,19 @@ class ResultOverlayView @JvmOverloads constructor(
      */
     fun clear() {
         sets = emptyList()
+        allCards = emptyList()
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        
+        // First, draw all detected cards with a simple boundary
+        if (sets.isEmpty() && allCards.isNotEmpty()) {
+            allCards.forEach { card ->
+                drawCardRect(canvas, card, cardDetectedPaint)
+            }
+        }
         
         // Draw rectangles around cards in each set
         sets.forEachIndexed { index, set ->

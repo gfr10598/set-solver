@@ -11,7 +11,7 @@ import kotlin.math.abs
 /**
  * Detects and recognizes Set cards in an image
  */
-class CardDetector {
+class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnosticLogger()) {
     
     companion object {
         private const val TAG = "CardDetector"
@@ -35,6 +35,10 @@ class CardDetector {
      */
     fun detectCards(bitmap: Bitmap): List<Card> {
         try {
+            diagnosticLogger.logSection("Image Capture")
+            diagnosticLogger.log("Image dimensions: ${bitmap.width}x${bitmap.height}")
+            diagnosticLogger.log("Image format: ${bitmap.config}")
+            
             // Convert bitmap to OpenCV Mat
             val mat = Mat()
             Utils.bitmapToMat(bitmap, mat)
@@ -55,6 +59,8 @@ class CardDetector {
                 Imgproc.THRESH_BINARY_INV, 11, 2.0
             )
             
+            diagnosticLogger.logSection("Card Detection")
+            
             // Find contours
             val contours = ArrayList<MatOfPoint>()
             val hierarchy = Mat()
@@ -63,13 +69,19 @@ class CardDetector {
                 Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE
             )
             
+            diagnosticLogger.log("Total contours found: ${contours.size}")
+            
             val cards = mutableListOf<Card>()
+            var filteredCount = 0
+            var quadrilateralCount = 0
             
             // Process each contour to find cards
             for (contour in contours) {
                 val area = Imgproc.contourArea(contour)
                 
                 if (area in MIN_CARD_AREA..MAX_CARD_AREA) {
+                    filteredCount++
+                    
                     // Approximate the contour to a polygon
                     val curve = MatOfPoint2f(*contour.toArray())
                     val approx = MatOfPoint2f()
@@ -78,6 +90,8 @@ class CardDetector {
                     
                     // If it's a quadrilateral (4 vertices), it might be a card
                     if (approx.total() == 4L) {
+                        quadrilateralCount++
+                        
                         // Get the minimum area rectangle to determine rotation
                         // Note: OpenCV's minAreaRect returns an angle between -90 and 0 degrees
                         // representing the rotation of the rectangle's longer side relative to horizontal
@@ -86,11 +100,13 @@ class CardDetector {
                         
                         val rect = Imgproc.boundingRect(contour)
                         
+                        diagnosticLogger.log("Card candidate ${cards.size + 1}: area=${"%.0f".format(area)}, rect=(${rect.x},${rect.y},${rect.width},${rect.height})")
+                        
                         // Extract the card region
                         val cardRegion = mat.submat(rect)
                         
                         // Recognize the card attributes, passing the rotation angle
-                        val card = recognizeCard(cardRegion, rect, angle)
+                        val card = recognizeCard(cardRegion, rect, angle, cards.size + 1)
                         if (card != null) {
                             cards.add(card)
                         }
@@ -105,6 +121,10 @@ class CardDetector {
                 contour.release()
             }
             
+            diagnosticLogger.log("Contours passing size filter: $filteredCount")
+            diagnosticLogger.log("Quadrilateral contours: $quadrilateralCount")
+            diagnosticLogger.log("Cards successfully detected: ${cards.size}")
+            
             // Clean up
             mat.release()
             gray.release()
@@ -117,6 +137,7 @@ class CardDetector {
             
         } catch (e: Exception) {
             Log.e(TAG, "Error detecting cards", e)
+            diagnosticLogger.log("ERROR: ${e.message}")
             return emptyList()
         }
     }
@@ -159,14 +180,18 @@ class CardDetector {
      * Recognizes card attributes from a card region
      * This is a simplified implementation using basic heuristics
      */
-    private fun recognizeCard(cardRegion: Mat, rect: Rect, rotation: Float): Card? {
+    private fun recognizeCard(cardRegion: Mat, rect: Rect, rotation: Float, cardIndex: Int): Card? {
         try {
+            diagnosticLogger.logSection("Feature Extraction - Card $cardIndex")
             // Normalize brightness and contrast
             val normalizedRegion = normalizeCardRegion(cardRegion)
             
             // Analyze the card to determine its attributes
             val number = detectNumber(normalizedRegion)
+            diagnosticLogger.log("  Number: ${number.name} (${number.count})")
+
             val shape = detectShape(normalizedRegion)
+            diagnosticLogger.log("  Shape: ${shape.name}")
             
             // Generate symbol mask for color detection
             val gray = Mat()
@@ -177,7 +202,11 @@ class CardDetector {
             gray.release()
             
             val color = detectColor(normalizedRegion, symbolMask)
+            diagnosticLogger.log("  Color: ${color.name}")
             val shading = detectShading(normalizedRegion)
+            diagnosticLogger.log("  Shading: ${shading.name}")
+            diagnosticLogger.log("  Bounding box: (${rect.x}, ${rect.y}, ${rect.width}, ${rect.height})")
+            diagnosticLogger.log("  Rotation: ${"%.1f".format(rotation)}°")
             
             // Clean up
             normalizedRegion.release()
@@ -197,6 +226,7 @@ class CardDetector {
             
         } catch (e: Exception) {
             Log.e(TAG, "Error recognizing card", e)
+            diagnosticLogger.log("  ERROR recognizing card: ${e.message}")
             return null
         }
     }
