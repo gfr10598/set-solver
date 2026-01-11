@@ -1,0 +1,82 @@
+┌─────────────────────────────────────────┐
+│  Set Solver - Diagnostic UI Layout     │
+└─────────────────────────────────────────┘
+
+╔═════════════════════════════════════════╗
+║         UPPER HALF (50%)                ║
+║  ┌─────────────────────────────────┐   ║
+║  │  Status: Sets found: 1          │   ║
+║  └─────────────────────────────────┘   ║
+║                                         ║
+║     ┌──────────┐  ┌──────────┐         ║
+║     │  CARD 1  │  │  CARD 2  │         ║
+║     │  ┌────┐  │  │  ┌────┐  │         ║
+║     │  │ ◊◊ │  │  │  │ ○○ │  │         ║
+║     │  └────┘  │  │  └────┘  │         ║
+║     └──────────┘  └──────────┘         ║
+║            ┌──────────┐                ║
+║            │  CARD 3  │                ║
+║            │  ┌────┐  │                ║
+║            │  │ ~~~ │  │                ║
+║            │  └────┘  │                ║
+║            └──────────┘                ║
+║                                         ║
+║         [ Capture Button ]             ║
+╠═════════════════════════════════════════╣
+║         LOWER HALF (50%)                ║
+║  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  ║
+║  ┃ Diagnostics Log                 ┃  ║
+║  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  ║
+║  ┌─────────────────────────────────┐  ║
+║  │ [14:23:45.123] === Processing  │  ║
+║  │                Started ===      │  ║
+║  │                                 │  ║
+║  │ [14:23:47.460] === Image      │  ║
+║  │                Capture ===      │  ║
+║  │ [14:23:47.461] Image dimensions│  ║
+║  │                : 1920x1080      │  ║
+║  │                                 │  ║
+║  │ [14:23:47.550] === Card       │  ║
+║  │                Detection ===    │  ║
+║  │ [14:23:47.551] Total contours: │  ║
+║  │                147              │  ║
+║  │ [14:23:47.552] Filtered: 12   │  ║
+║  │ [14:23:47.553] Quadrilaterals:│  ║
+║  │                3                │  ║
+║  │                                 │  ║
+║  │ [14:23:47.601] === Feature    │  ║
+║  │                Extraction ===   │  ║
+║  │ [14:23:47.602]   Number: TWO  │  ║
+║  │ [14:23:47.603]   Shape: OVAL  │  ║
+║  │ [14:23:47.604]   Color: RED   │  ║
+║  │ [14:23:47.605]   Shading: SOL │  ║
+║  │                                 │  ║
+║  │ [14:23:47.891] === Set       │  ║
+║  │                Finding ===      │  ║
+║  │ [14:23:47.892] Total cards: 3 │  ║
+║  │ [14:23:47.894] ✓ Valid set    │  ║
+║  │                found!           │  ║
+║  │                                 │  ║
+║  │ [14:23:47.904] === Result === │  ║
+║  │ [14:23:47.905] SUCCESS: Found │  ║
+║  │                1 valid set(s)   │  ║
+║  │                                 │  ║
+║  │                         ▲ Auto │  ║
+║  │                         │ scro │  ║
+║  └─────────────────────────────────┘  ║
+╚═════════════════════════════════════════╝
+
+Legend:
+━━━━ Header bar (dark gray background)
+──── Card boundaries (yellow/green)
+==== Section dividers in log
+[HH:MM:SS.mmm] Timestamp format
+
+Features:
+• Upper half shows camera preview with overlays
+• Card boundaries are drawn in yellow (detected)
+  or colored rectangles (sets found)
+• Lower half shows scrollable diagnostic log
+• Log auto-scrolls to bottom on new entries
+• Timestamps show precise timing of each step
+• Section headers help organize log output
