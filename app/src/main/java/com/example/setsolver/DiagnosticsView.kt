@@ -20,6 +20,7 @@ class DiagnosticsView @JvmOverloads constructor(
         textSize = 12f
         setPadding(16, 16, 16, 16)
         setTextIsSelectable(true)
+        setTextColor(context.getColor(R.color.white))
     }
 
     private val logBuilder = StringBuilder()
