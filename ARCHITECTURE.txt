@@ -1,0 +1,236 @@
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   DIAGNOSTIC UI ARCHITECTURE                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           MainActivity                                  │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  onCreate()                                                        │ │
+│  │  • Create DiagnosticLogger implementation                         │ │
+│  │  • Initialize CardDetector(diagnosticLogger)                      │ │
+│  │  • Initialize SetFinder(diagnosticLogger)                         │ │
+│  │  • Set up camera                                                  │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  captureAndProcess()                                              │ │
+│  │  • Clear previous diagnostics                                     │ │
+│  │  • Log "Processing Started"                                       │ │
+│  │  • Take photo                                                     │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                           │                                             │
+│                           ▼                                             │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  processImage()                                                   │ │
+│  │  • Convert ImageProxy to Bitmap                                   │ │
+│  │  • Call cardDetector.detectCards(bitmap)  ────────────┐          │ │
+│  │  • Call setFinder.findAllSets(cards)      ──────────┐ │          │ │
+│  │  • Update overlayView with results                  │ │          │ │
+│  │  • Update statusText                                │ │          │ │
+│  └──────────────────────────────────────────────────────│─│──────────┘ │
+└──────────────────────────────────────────────────────────│─│────────────┘
+                                                           │ │
+┌──────────────────────────────────────────────────────────│─│────────────┐
+│                        CardDetector                      │ │            │
+│                                                          │ │            │
+│  ┌────────────────────────────────────────────────────┐ │ │            │
+│  │  detectCards(bitmap)                               │ │ │            │
+│  │  • Log "Image Capture" section                     │ │ │            │
+│  │  • Log image dimensions and format                 │ │ │            │
+│  │  • Convert to OpenCV Mat                           │ │ │            │
+│  │  • Apply preprocessing (grayscale, blur, threshold)│ │ │            │
+│  │  • Log "Card Detection" section                    │ │ │            │
+│  │  • Find contours                                   │ │ │            │
+│  │  • Log total contours found                        │ │ │            │
+│  │  • Filter contours by area                         │ │ │            │
+│  │  • Log filtered count                              │ │ │            │
+│  │  • Find quadrilaterals                             │ │ │            │
+│  │  • For each card candidate:                        │ │ │            │
+│  │    - Extract region                                │ │ │            │
+│  │    - Call recognizeCard()  ────────────┐           │ │ │            │
+│  │  • Log cards detected count            │           │ │ │            │
+│  │  • Return List<Card>                   │           │ │ │            │
+│  └────────────────────────────────────────│───────────┘ │ │            │
+│                                           │             │ │            │
+│  ┌────────────────────────────────────────▼───────────┐ │ │            │
+│  │  recognizeCard(region, rect, rotation, index)     │ │ │            │
+│  │  • Log "Feature Extraction - Card N" section      │ │ │            │
+│  │  • Detect number    ──────► Log result            │ │ │            │
+│  │  • Detect shape     ──────► Log result            │ │ │            │
+│  │  • Detect color     ──────► Log result            │ │ │            │
+│  │  • Detect shading   ──────► Log result            │ │ │            │
+│  │  • Log bounding box                               │ │ │            │
+│  │  • Log rotation                                   │ │ │            │
+│  │  • Return Card object                             │ │ │            │
+│  └────────────────────────────────────────────────────┘ │ │            │
+│                                                          │ │            │
+│  Uses: DiagnosticLogger ◄────────────────────────────────┘ │            │
+└──────────────────────────────────────────────────────────────┘            │
+                                                             │              │
+┌────────────────────────────────────────────────────────────▼────────────┐
+│                           SetFinder                                     │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  findAllSets(cards)                                               │ │
+│  │  • Log "Set Finding" section                                      │ │
+│  │  • Log total cards to analyze                                     │ │
+│  │  • Calculate combinations                                         │ │
+│  │  • Log possible combinations                                      │ │
+│  │  • For each combination (i, j, k):                                │ │
+│  │    - Check if isValidSet(card[i], card[j], card[k])               │ │
+│  │    - If valid:                                                    │ │
+│  │      • Log "✓ Valid set found: Cards i, j, k"                    │ │
+│  │      • Call logSetDetails()  ──────────┐                          │ │
+│  │  • Log combinations checked            │                          │ │
+│  │  • Log valid sets found                │                          │ │
+│  │  • Return List<Triple<Card>>           │                          │ │
+│  └─────────────────────────────────────────│──────────────────────────┘ │
+│                                            │                            │
+│  ┌─────────────────────────────────────────▼──────────────────────────┐ │
+│  │  logSetDetails(card1, card2, card3, indices)                       │ │
+│  │  • Log each card's attributes                                      │ │
+│  │  • For each attribute:                                             │ │
+│  │    - Check if all same or all different                            │ │
+│  │    - Log status (✓ All same / ✓ All different / ✗ Invalid)       │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  Uses: DiagnosticLogger ◄───────────────────────────────────────────────┤
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      DiagnosticLogger Interface                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  + log(message: String)                                           │ │
+│  │  + logSection(title: String)                                      │ │
+│  │  + clear()                                                        │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  Implementation in MainActivity:                                        │
+│  • Wraps DiagnosticsView                                               │
+│  • Ensures UI updates on main thread                                   │
+│  • Calls runOnUiThread { diagnosticsView.log(...) }                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         DiagnosticsView                                 │
+│                    (Custom ScrollView)                                  │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  - textView: TextView                                             │ │
+│  │  - logBuilder: StringBuilder                                      │ │
+│  │  - dateFormat: SimpleDateFormat("HH:mm:ss.SSS")                   │ │
+│  ├───────────────────────────────────────────────────────────────────┤ │
+│  │  + log(message)                                                   │ │
+│  │    • Append "[timestamp] message\n" to logBuilder                 │ │
+│  │    • Update textView                                              │ │
+│  │    • Auto-scroll to bottom                                        │ │
+│  │                                                                   │ │
+│  │  + logSection(title)                                              │ │
+│  │    • Append "\n[timestamp] === title ===\n"                       │ │
+│  │    • Update textView                                              │ │
+│  │    • Auto-scroll to bottom                                        │ │
+│  │                                                                   │ │
+│  │  + clear()                                                        │ │
+│  │    • Clear logBuilder                                             │ │
+│  │    • Update textView                                              │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      ResultOverlayView                                  │
+│                     (Custom View)                                       │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │  - sets: List<Triple<Card>>                                       │ │
+│  │  - allCards: List<Card>                                           │ │
+│  │  - paints: List<Paint> (green, red, blue, yellow)                │ │
+│  ├───────────────────────────────────────────────────────────────────┤ │
+│  │  + setSets(newSets)                                               │ │
+│  │    • Store sets                                                   │ │
+│  │    • Extract all cards from sets                                  │ │
+│  │    • Call invalidate()                                            │ │
+│  │                                                                   │ │
+│  │  + setCards(cards)                                                │ │
+│  │    • Store cards                                                  │ │
+│  │    • Call invalidate()                                            │ │
+│  │                                                                   │ │
+│  │  + onDraw(canvas)                                                 │ │
+│  │    • If no sets but cards exist:                                  │ │
+│  │      - Draw green rectangles around all cards                     │ │
+│  │    • For each set:                                                │ │
+│  │      - Draw colored rectangles around cards                       │ │
+│  │      - Draw connecting lines between cards                        │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        UI Layout (activity_main.xml)                    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  ConstraintLayout (root)                                        │   │
+│  │  ┌───────────────────────────────────────────────────────────┐  │   │
+│  │  │  cameraContainer (ConstraintLayout, 50% height)           │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │  viewFinder (PreviewView)                           │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────┘  │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │  overlayView (ResultOverlayView)                    │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────┘  │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │  statusText (TextView - top overlay)                │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────┘  │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │  captureButton (Button - bottom)                    │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────┘  │  │   │
+│  │  └───────────────────────────────────────────────────────────┘  │   │
+│  │  ┌───────────────────────────────────────────────────────────┐  │   │
+│  │  │  diagnosticsContainer (ConstraintLayout, 50% height)      │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │  diagnosticsHeader (TextView - dark header)         │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────┘  │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │  diagnosticsView (DiagnosticsView - scrollable)     │  │  │   │
+│  │  │  │  • Auto-scroll to bottom                            │  │  │   │
+│  │  │  │  • Timestamped entries                              │  │  │   │
+│  │  │  │  • White text on dark background                    │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────┘  │  │   │
+│  │  └───────────────────────────────────────────────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         DATA FLOW                                       │
+│                                                                         │
+│  Camera Capture                                                         │
+│       │                                                                 │
+│       ▼                                                                 │
+│  ImageProxy ───► Bitmap                                                 │
+│       │                                                                 │
+│       ▼                                                                 │
+│  CardDetector.detectCards()                                             │
+│       │                                                                 │
+│       ├──► Log: Image Capture                                           │
+│       ├──► Log: Card Detection                                          │
+│       ├──► Log: Feature Extraction (per card)                           │
+│       │                                                                 │
+│       ▼                                                                 │
+│  List<Card>                                                             │
+│       │                                                                 │
+│       ▼                                                                 │
+│  SetFinder.findAllSets()                                                │
+│       │                                                                 │
+│       ├──► Log: Set Finding                                             │
+│       ├──► Log: Valid sets (with details)                               │
+│       │                                                                 │
+│       ▼                                                                 │
+│  List<Triple<Card>>                                                     │
+│       │                                                                 │
+│       ├──► ResultOverlayView.setSets() ───► Visual overlay              │
+│       ├──► statusText.text ────────────────► Status message             │
+│       └──► Log: Result ─────────────────────► Diagnostic summary        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Legend:
+───► Data/Control flow
+│    Sequential execution
+▼    Next step
+┌─┐  Container/Component
+└─┘  Boundary

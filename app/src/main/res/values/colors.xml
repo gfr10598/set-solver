@@ -11,4 +11,8 @@
     <color name="set_highlight_2">#FFFF0000</color>
     <color name="set_highlight_3">#FF0000FF</color>
     <color name="set_highlight_4">#FFFFFF00</color>
+    <color name="diagnostics_background">#FF1E1E1E</color>
+    <color name="diagnostics_header_background">#FF2D2D30</color>
+    <color name="card_detected">#FF00FF00</color>
+    <color name="card_boundary">#FFFFFF00</color>
 </resources>

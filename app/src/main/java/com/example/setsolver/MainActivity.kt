@@ -27,8 +27,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
     private var imageCapture: ImageCapture? = null
-    private val cardDetector = CardDetector()
-    private val setFinder = SetFinder()
+    
+    private lateinit var diagnosticLogger: DiagnosticLogger
+    private lateinit var cardDetector: CardDetector
+    private lateinit var setFinder: SetFinder
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,6 +45,31 @@ class MainActivity : AppCompatActivity() {
         
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        
+        // Create diagnostic logger wrapper
+        diagnosticLogger = object : DiagnosticLogger {
+            override fun log(message: String) {
+                runOnUiThread {
+                    binding.diagnosticsView.log(message)
+                }
+            }
+            
+            override fun logSection(title: String) {
+                runOnUiThread {
+                    binding.diagnosticsView.logSection(title)
+                }
+            }
+            
+            override fun clear() {
+                runOnUiThread {
+                    binding.diagnosticsView.clear()
+                }
+            }
+        }
+        
+        // Initialize detectors with diagnostic logger
+        cardDetector = CardDetector(diagnosticLogger)
+        setFinder = SetFinder(diagnosticLogger)
 
         // Request camera permissions
         if (allPermissionsGranted()) {
@@ -59,6 +86,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+        
+        // Initial diagnostic message
+        diagnosticLogger.log("App started - ready to capture")
     }
 
     private fun startCamera() {
@@ -103,6 +133,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.statusText.text = "Processing..."
         binding.captureButton.isEnabled = false
+        
+        // Clear previous diagnostics
+        diagnosticLogger.clear()
+        diagnosticLogger.logSection("Processing Started")
 
         imageCapture.takePicture(
             cameraExecutor,
@@ -117,6 +151,7 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread {
                         binding.statusText.text = "Capture failed"
                         binding.captureButton.isEnabled = true
+                        diagnosticLogger.log("ERROR: Photo capture failed - ${exception.message}")
                     }
                 }
             }
@@ -136,12 +171,21 @@ class MainActivity : AppCompatActivity() {
             
             // Update UI on main thread
             runOnUiThread {
-                if (sets.isEmpty()) {
-                    binding.statusText.text = getString(R.string.no_sets_found)
+                if (cards.isEmpty()) {
+                    binding.statusText.text = "No cards detected"
                     binding.overlayView.clear()
+                    diagnosticLogger.logSection("Result")
+                    diagnosticLogger.log("No cards were detected in the image")
+                } else if (sets.isEmpty()) {
+                    binding.statusText.text = getString(R.string.no_sets_found)
+                    binding.overlayView.setCards(cards)
+                    diagnosticLogger.logSection("Result")
+                    diagnosticLogger.log("Cards detected but no valid sets found")
                 } else {
                     binding.statusText.text = getString(R.string.sets_found, sets.size)
                     binding.overlayView.setSets(sets)
+                    diagnosticLogger.logSection("Result")
+                    diagnosticLogger.log("SUCCESS: Found ${sets.size} valid set(s)")
                 }
                 binding.captureButton.isEnabled = true
                 
@@ -153,6 +197,8 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 binding.statusText.text = "Error processing image"
                 binding.captureButton.isEnabled = true
+                diagnosticLogger.log("FATAL ERROR: ${e.message}")
+                diagnosticLogger.log("Stack trace: ${e.stackTraceToString()}")
             }
         }
     }
