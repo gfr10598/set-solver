@@ -5,4 +5,5 @@
     <string name="permission_denied">Camera permission is required</string>
     <string name="no_sets_found">No sets found</string>
     <string name="sets_found">Sets found: %d</string>
+    <string name="diagnostics_header">Diagnostics Log</string>
 </resources>
