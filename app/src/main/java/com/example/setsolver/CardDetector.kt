@@ -239,7 +239,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                         val g = Color.green(pixel).toFloat()
                         val b = Color.blue(pixel).toFloat()
                         
-                        // Filter out near-white pixels (all channels must be below threshold)
+                        // Keep colored pixels (all channels must be below white threshold)
                         if (r < WHITE_PIXEL_THRESHOLD && g < WHITE_PIXEL_THRESHOLD && b < WHITE_PIXEL_THRESHOLD) {
                             coloredPixels.add(floatArrayOf(r, g, b))
                         }
@@ -710,8 +710,13 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         }
         
         // Get the cluster with most votes
-        val dominantCluster = clusterVotes.maxByOrNull { it.value }?.key ?: 0
-        val dominantClusterColor = globalColorClusters[dominantCluster]
+        val dominantClusterIndex = clusterVotes.maxByOrNull { it.value }?.key
+        if (dominantClusterIndex == null || dominantClusterIndex >= globalColorClusters.size) {
+            // Safety fallback: should not happen if globalColorClusters is non-empty
+            return Card.CardColor.PURPLE
+        }
+        
+        val dominantClusterColor = globalColorClusters[dominantClusterIndex]
         
         // Map cluster to CardColor
         return mapClusterToCardColor(dominantClusterColor)
