@@ -11,8 +11,8 @@ class SetFinderTest {
     private val setFinder = SetFinder()
 
     @Test
-    fun testValidSet_allSame() {
-        // Three cards with all attributes the same
+    fun testInvalidSet_allIdentical() {
+        // Three identical cards should be rejected (must differ in at least one dimension)
         val card1 = Card(
             Card.Number.ONE,
             Card.Shape.DIAMOND,
@@ -32,7 +32,7 @@ class SetFinderTest {
             Card.Shading.SOLID
         )
 
-        assertTrue(setFinder.isValidSet(card1, card2, card3))
+        assertFalse(setFinder.isValidSet(card1, card2, card3))
     }
 
     @Test
@@ -227,5 +227,130 @@ class SetFinderTest {
         val card3 = Card(Card.Number.THREE, Card.Shape.SQUIGGLE, Card.CardColor.PURPLE, Card.Shading.OPEN)
 
         assertFalse(setFinder.isValidSet(card1, card2, card3))
+    }
+
+    @Test
+    fun testValidSet_allSameExceptNumber() {
+        // Cards with all attributes the same except number - should be valid
+        val card1 = Card(
+            Card.Number.ONE,
+            Card.Shape.DIAMOND,
+            Card.CardColor.RED,
+            Card.Shading.SOLID
+        )
+        val card2 = Card(
+            Card.Number.TWO,
+            Card.Shape.DIAMOND,
+            Card.CardColor.RED,
+            Card.Shading.SOLID
+        )
+        val card3 = Card(
+            Card.Number.THREE,
+            Card.Shape.DIAMOND,
+            Card.CardColor.RED,
+            Card.Shading.SOLID
+        )
+
+        assertTrue(setFinder.isValidSet(card1, card2, card3))
+    }
+
+    @Test
+    fun testValidSet_allSameExceptShape() {
+        // Cards with all attributes the same except shape - should be valid
+        val card1 = Card(
+            Card.Number.TWO,
+            Card.Shape.DIAMOND,
+            Card.CardColor.GREEN,
+            Card.Shading.STRIPED
+        )
+        val card2 = Card(
+            Card.Number.TWO,
+            Card.Shape.OVAL,
+            Card.CardColor.GREEN,
+            Card.Shading.STRIPED
+        )
+        val card3 = Card(
+            Card.Number.TWO,
+            Card.Shape.SQUIGGLE,
+            Card.CardColor.GREEN,
+            Card.Shading.STRIPED
+        )
+
+        assertTrue(setFinder.isValidSet(card1, card2, card3))
+    }
+
+    @Test
+    fun testValidSet_allSameExceptColor() {
+        // Cards with all attributes the same except color - should be valid
+        val card1 = Card(
+            Card.Number.THREE,
+            Card.Shape.OVAL,
+            Card.CardColor.RED,
+            Card.Shading.OPEN
+        )
+        val card2 = Card(
+            Card.Number.THREE,
+            Card.Shape.OVAL,
+            Card.CardColor.GREEN,
+            Card.Shading.OPEN
+        )
+        val card3 = Card(
+            Card.Number.THREE,
+            Card.Shape.OVAL,
+            Card.CardColor.PURPLE,
+            Card.Shading.OPEN
+        )
+
+        assertTrue(setFinder.isValidSet(card1, card2, card3))
+    }
+
+    @Test
+    fun testValidSet_allSameExceptShading() {
+        // Cards with all attributes the same except shading - should be valid
+        val card1 = Card(
+            Card.Number.ONE,
+            Card.Shape.SQUIGGLE,
+            Card.CardColor.PURPLE,
+            Card.Shading.SOLID
+        )
+        val card2 = Card(
+            Card.Number.ONE,
+            Card.Shape.SQUIGGLE,
+            Card.CardColor.PURPLE,
+            Card.Shading.STRIPED
+        )
+        val card3 = Card(
+            Card.Number.ONE,
+            Card.Shape.SQUIGGLE,
+            Card.CardColor.PURPLE,
+            Card.Shading.OPEN
+        )
+
+        assertTrue(setFinder.isValidSet(card1, card2, card3))
+    }
+
+    @Test
+    fun testDiagnosticLogging_identicalCards() {
+        // Test that diagnostic logging works for identical cards
+        val logMessages = mutableListOf<String>()
+        val logger = object : DiagnosticLogger {
+            override fun log(message: String) {
+                logMessages.add(message)
+            }
+            override fun logSection(title: String) {}
+            override fun clear() {}
+        }
+        
+        val finder = SetFinder(logger)
+        val card = Card(
+            Card.Number.ONE,
+            Card.Shape.DIAMOND,
+            Card.CardColor.RED,
+            Card.Shading.SOLID
+        )
+        
+        finder.isValidSet(card, card, card)
+        
+        assertTrue(logMessages.any { it.contains("identical") && it.contains("differ in at least one dimension") })
     }
 }
