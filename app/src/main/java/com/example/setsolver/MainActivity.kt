@@ -24,6 +24,11 @@ class MainActivity : AppCompatActivity() {
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
     }
 
+    private enum class UiState {
+        LIVE_PREVIEW,
+        IMAGE_CAPTURED
+    }
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
     private var imageCapture: ImageCapture? = null
@@ -31,6 +36,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var diagnosticLogger: DiagnosticLogger
     private lateinit var cardDetector: CardDetector
     private lateinit var setFinder: SetFinder
+    
+    // State management for capture flow
+    private var currentState: UiState = UiState.LIVE_PREVIEW
+    private var capturedBitmap: Bitmap? = null
+    private var detectedSets: List<Triple<Card, Card, Card>> = emptyList()
+    private var selectedSetIndex: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +93,10 @@ class MainActivity : AppCompatActivity() {
 
         // Set up capture button
         binding.captureButton.setOnClickListener {
-            captureAndProcess()
+            when (currentState) {
+                UiState.LIVE_PREVIEW -> captureAndProcess()
+                UiState.IMAGE_CAPTURED -> dismissCapturedImage()
+            }
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -163,14 +177,25 @@ class MainActivity : AppCompatActivity() {
             // Convert ImageProxy to Bitmap
             val bitmap = imageProxyToBitmap(image)
             
+            // Save the bitmap for display
+            capturedBitmap = bitmap.copy(bitmap.config, false)
+            
             // Detect cards in the image
             val cards = cardDetector.detectCards(bitmap)
             
             // Find sets among the detected cards
             val sets = setFinder.findAllSets(cards)
+            detectedSets = sets
             
             // Update UI on main thread
             runOnUiThread {
+                // Switch to captured image mode
+                currentState = UiState.IMAGE_CAPTURED
+                binding.viewFinder.visibility = android.view.View.GONE
+                binding.capturedImageView.visibility = android.view.View.VISIBLE
+                binding.capturedImageView.setImageBitmap(capturedBitmap)
+                binding.captureButton.text = getString(R.string.dismiss_button)
+                
                 if (cards.isEmpty()) {
                     binding.statusText.text = "No cards detected"
                     binding.overlayView.clear()
@@ -184,6 +209,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     binding.statusText.text = getString(R.string.sets_found, sets.size)
                     binding.overlayView.setSets(sets)
+                    createSetButtons(sets)
                     diagnosticLogger.logSection("Result")
                     diagnosticLogger.log("SUCCESS: Found ${sets.size} valid set(s)")
                 }
@@ -215,6 +241,85 @@ class MainActivity : AppCompatActivity() {
             image.width,
             image.height
         )
+    }
+
+    /**
+     * Dismisses the captured image and returns to live preview mode
+     */
+    private fun dismissCapturedImage() {
+        currentState = UiState.LIVE_PREVIEW
+        
+        // Clear the captured bitmap
+        capturedBitmap?.recycle()
+        capturedBitmap = null
+        
+        // Reset state
+        detectedSets = emptyList()
+        selectedSetIndex = null
+        
+        // Update UI
+        binding.capturedImageView.visibility = android.view.View.GONE
+        binding.viewFinder.visibility = android.view.View.VISIBLE
+        binding.captureButton.text = getString(R.string.capture_button)
+        binding.statusText.text = ""
+        
+        // Clear overlays and set buttons
+        binding.overlayView.clear()
+        binding.setButtonsContainer.removeAllViews()
+        binding.setButtonsScrollView.visibility = android.view.View.GONE
+    }
+
+    /**
+     * Creates interactive buttons for each detected set
+     */
+    private fun createSetButtons(sets: List<Triple<Card, Card, Card>>) {
+        binding.setButtonsContainer.removeAllViews()
+        
+        if (sets.isEmpty()) {
+            binding.setButtonsScrollView.visibility = android.view.View.GONE
+            return
+        }
+        
+        binding.setButtonsScrollView.visibility = android.view.View.VISIBLE
+        
+        val colors = listOf(
+            getColor(R.color.set_highlight_1),
+            getColor(R.color.set_highlight_2),
+            getColor(R.color.set_highlight_3),
+            getColor(R.color.set_highlight_4)
+        )
+        
+        sets.forEachIndexed { index, _ ->
+            val button = android.widget.Button(this).apply {
+                text = getString(R.string.set_button_label, index + 1)
+                setBackgroundColor(colors[index % colors.size])
+                setTextColor(getColor(R.color.white))
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = 16
+                }
+                setPadding(32, 16, 32, 16)
+                setOnClickListener { handleSetButtonClick(index) }
+            }
+            binding.setButtonsContainer.addView(button)
+        }
+    }
+
+    /**
+     * Handles click on a set button to highlight/unhighlight that set
+     */
+    private fun handleSetButtonClick(setIndex: Int) {
+        if (selectedSetIndex == setIndex) {
+            // Clicking the same button again - deselect
+            selectedSetIndex = null
+            binding.overlayView.highlightSet(null)
+        } else {
+            // Select this set
+            selectedSetIndex = setIndex
+            binding.overlayView.highlightSet(setIndex)
+        }
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
