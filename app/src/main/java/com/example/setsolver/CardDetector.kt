@@ -240,6 +240,11 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
      */
     private fun findCardContourInRegion(region: Mat): RotatedRect? {
         try {
+            // Early validation - check if region is valid and has minimum dimensions
+            if (region.empty() || region.width() < 10 || region.height() < 10) {
+                return null
+            }
+            
             // Convert to grayscale
             val gray = Mat()
             Imgproc.cvtColor(region, gray, Imgproc.COLOR_RGB2GRAY)
@@ -276,20 +281,22 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 // Check if area is within expected range for a card
                 if (area < MIN_CARD_AREA || area > MAX_CARD_AREA) continue
                 
-                // Approximate contour to polygon
+                // Approximate contour to polygon - use try-finally for cleanup
                 val curve = MatOfPoint2f(*contour.toArray())
                 val approx = MatOfPoint2f()
-                val perimeter = Imgproc.arcLength(curve, true)
-                Imgproc.approxPolyDP(curve, approx, CONTOUR_APPROX_EPSILON * perimeter, true)
-                
-                // Check if it's a quadrilateral (4 vertices)
-                if (approx.rows() == 4 && area > maxArea) {
-                    maxArea = area
-                    bestContour = contour
+                try {
+                    val perimeter = Imgproc.arcLength(curve, true)
+                    Imgproc.approxPolyDP(curve, approx, CONTOUR_APPROX_EPSILON * perimeter, true)
+                    
+                    // Check if it's a quadrilateral (4 vertices)
+                    if (approx.rows() == 4 && area > maxArea) {
+                        maxArea = area
+                        bestContour = contour
+                    }
+                } finally {
+                    curve.release()
+                    approx.release()
                 }
-                
-                curve.release()
-                approx.release()
             }
             
             // Clean up
@@ -322,9 +329,9 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
      * @param rotatedRect Rotated rectangle defining the card boundaries
      * @param offsetX X offset of search region in source image
      * @param offsetY Y offset of search region in source image
-     * @return Triple of (extracted card Mat, bounding Rect in source coordinates, rotation angle)
+     * @return Triple of (extracted card Mat, bounding Rect, rotation angle) or (null, null, 0f) if extraction fails
      */
-    private fun extractRotatedCard(mat: Mat, rotatedRect: RotatedRect, offsetX: Int, offsetY: Int): Triple<Mat, Rect, Float> {
+    private fun extractRotatedCard(mat: Mat, rotatedRect: RotatedRect, offsetX: Int, offsetY: Int): Triple<Mat?, Rect?, Float> {
         try {
             // Get rotation angle
             var angle = rotatedRect.angle.toFloat()
@@ -344,9 +351,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 angle += 90f
             }
             
-            // Normalize angle to [-180, 180] range
-            if (angle > 180) angle -= 360
-            if (angle < -180) angle += 360
+            // Normalize angle to [-180, 180] range using robust normalization
+            angle = ((angle % 360 + 540) % 360 - 180).toFloat()
             
             // Adjust center to source image coordinates
             val center = Point(
@@ -370,8 +376,8 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             if (w <= 0 || h <= 0) {
                 rotated.release()
                 rotMat.release()
-                // Return a fallback
-                return Triple(Mat(), Rect(offsetX, offsetY, 1, 1), 0f)
+                // Return null values for failure case
+                return Triple(null, null, 0f)
             }
             
             val rect = Rect(x, y, w, h)
@@ -385,7 +391,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
             
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting rotated card", e)
-            return Triple(Mat(), Rect(offsetX, offsetY, 1, 1), 0f)
+            return Triple(null, null, 0f)
         }
     }
     
