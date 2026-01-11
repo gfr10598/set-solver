@@ -11,8 +11,8 @@ class SetFinderTest {
     private val setFinder = SetFinder()
 
     @Test
-    fun testValidSet_allSame() {
-        // Three cards with all attributes the same
+    fun testInvalidSet_threeIdenticalCards() {
+        // Three completely identical cards should be rejected
         val card1 = Card(
             Card.Number.ONE,
             Card.Shape.DIAMOND,
@@ -32,7 +32,7 @@ class SetFinderTest {
             Card.Shading.SOLID
         )
 
-        assertTrue(setFinder.isValidSet(card1, card2, card3))
+        assertFalse(setFinder.isValidSet(card1, card2, card3))
     }
 
     @Test

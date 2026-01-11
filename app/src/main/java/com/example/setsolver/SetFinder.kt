@@ -8,9 +8,19 @@ class SetFinder(private val diagnosticLogger: DiagnosticLogger = NullDiagnosticL
     /**
      * Checks if three cards form a valid set
      * A set is valid if for each of the four attributes,
-     * the values are either all the same or all different
+     * the values are either all the same or all different,
+     * AND the three cards must differ in at least one dimension
      */
     fun isValidSet(card1: Card, card2: Card, card3: Card): Boolean {
+        // Reject three identical cards - they must differ in at least one attribute dimension
+        // Compare only the Set attributes (number, shape, color, shading), not positional properties
+        if (card1.number == card2.number && card2.number == card3.number &&
+            card1.shape == card2.shape && card2.shape == card3.shape &&
+            card1.color == card2.color && card2.color == card3.color &&
+            card1.shading == card2.shading && card2.shading == card3.shading) {
+            return false
+        }
+        
         return isValidAttribute(card1.number, card2.number, card3.number) &&
                isValidAttribute(card1.shape, card2.shape, card3.shape) &&
                isValidAttribute(card1.color, card2.color, card3.color) &&
