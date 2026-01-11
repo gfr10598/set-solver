@@ -19,6 +19,13 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         private const val TAG = "CardDetector"
         private const val MIN_CARD_AREA = 5000.0
         private const val MAX_CARD_AREA = 500000.0
+        
+        // Shape detection constants
+        /** Epsilon factor for polygon approximation (as fraction of perimeter) */
+        private const val POLYGON_APPROX_EPSILON = 0.02
+        
+        /** Angle tolerance in degrees for detecting parallel edges */
+        private const val PARALLEL_THRESHOLD = 10.0
     }
 
     /**
@@ -250,7 +257,7 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
                 val curve = MatOfPoint2f(*largestContour.toArray())
                 val approx = MatOfPoint2f()
                 val perimeter = Imgproc.arcLength(curve, true)
-                Imgproc.approxPolyDP(curve, approx, 0.02 * perimeter, true)
+                Imgproc.approxPolyDP(curve, approx, POLYGON_APPROX_EPSILON * perimeter, true)
                 
                 // Count parallel edge pairs
                 val parallelPairs = countParallelEdgePairs(approx)
@@ -294,7 +301,6 @@ class CardDetector(private val diagnosticLogger: DiagnosticLogger = NullDiagnost
         }
         
         // Count parallel pairs
-        val PARALLEL_THRESHOLD = 10.0  // degrees tolerance for parallel detection
         var pairCount = 0
         val used = mutableSetOf<Int>()
         
